@@ -263,7 +263,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 
 > Highest-risk phase. Steps 3.0 and 3.1 are **spikes**: prove the macOS APIs work from Python before building on them. Record the results in ADRs.
 
-- [ ] **3.0 Spike: system audio capture with ScreenCaptureKit.**
+- [x] **3.0 Spike: system audio capture with ScreenCaptureKit.**
   - **Files:** `scripts/spike_system_audio.py`, `docs/decisions/0003-system-audio.md`; `uv add pyobjc-framework-ScreenCaptureKit pyobjc-framework-CoreMedia pyobjc-framework-libdispatch`.
   - **Do:** the script captures 10 s of system audio (play a YouTube video) to `system.wav` at 16 kHz mono. Sketch:
     ```python
