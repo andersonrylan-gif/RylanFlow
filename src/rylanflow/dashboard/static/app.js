@@ -123,7 +123,7 @@
     const card = e.target.closest(".card");
     if (!card) return;
     const id = Number(card.dataset.id);
-    const action = e.target.dataset.action;
+    const action = e.target.closest("[data-action]")?.dataset.action;
 
     if (action === "toggle") {
       expanded.has(id) ? expanded.delete(id) : expanded.add(id);
@@ -285,7 +285,7 @@
     const card = e.target.closest(".meeting-card");
     if (!card) return;
     const id = Number(card.dataset.id);
-    const action = e.target.dataset.action;
+    const action = e.target.closest("[data-action]")?.dataset.action;
 
     if (action === "open") {
       showMeetingDetail(id);
