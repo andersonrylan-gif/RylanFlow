@@ -86,11 +86,8 @@ def main() -> None:
 
         if args.action == "on":
             print(autostart.enable())
-            print("\nGrant Accessibility and Input Monitoring to this program in System Settings:")
-            print(f"  {autostart.real_python()}")
-            print(
-                "(+ button, then Cmd+Shift+G to paste the path), then run: rylanflow autostart on"
-            )
+            if autostart.find_app() is None:
+                print("Tip: put RylanFlow.app in /Applications to start the packaged app instead.")
         elif args.action == "off":
             print(autostart.disable())
         else:
