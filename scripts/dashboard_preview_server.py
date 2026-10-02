@@ -18,11 +18,13 @@ class FakeActions:
             "sounds": True,
             "remove_fillers": True,
             "start_at_login": False,
+            "overlay": "bottom",
             "available_hotkeys": {"Right Option": "alt_r", "Right Command": "cmd_r"},
             "available_models": {
                 "Fast (base)": "mlx-community/whisper-base-mlx",
                 "Accurate (large-v3-turbo)": "mlx-community/whisper-large-v3-turbo",
             },
+            "available_overlay_positions": {"Bottom": "bottom", "Top": "top", "Off": "off"},
         }
 
     def get_settings(self):

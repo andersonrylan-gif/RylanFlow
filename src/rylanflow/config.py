@@ -20,6 +20,7 @@ class Config:
     sounds: bool = True  # play a cue when recording starts and stops
     remove_fillers: bool = True  # drop "um" / "uh" from transcripts
     dashboard_seen: bool = False  # True once the dashboard has auto-opened on first launch
+    overlay: str = "bottom"  # where the dictation pop-up appears: "bottom", "top", or "off"
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -40,6 +41,7 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
         f"sounds = {str(config.sounds).lower()}",
         f"remove_fillers = {str(config.remove_fillers).lower()}",
         f"dashboard_seen = {str(config.dashboard_seen).lower()}",
+        f'overlay = "{config.overlay}"',
     ]
     if config.language:
         lines.append(f'language = "{config.language}"')

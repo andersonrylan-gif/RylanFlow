@@ -237,7 +237,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** model behaviour for silence, loud and decay, state transitions, and fade timing with a fake clock.
   - **Done when:** tests pass.
 
-- [ ] **2.2 Overlay panel.**
+- [x] **2.2 Overlay panel.**
   - **Files:** `overlay.py`, `app.py`, `config.py` (`overlay: str = "bottom"`, with `"top"` and `"off"` as options).
   - **Do:**
     - `Overlay` creates an `NSPanel` with style `NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel`, size 120×34. Panel settings:
