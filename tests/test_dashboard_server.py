@@ -214,6 +214,16 @@ def test_list_meetings(server):
     assert data[0]["title"] == "Standup"
 
 
+def test_search_meetings(server):
+    srv, store, _actions, url = server
+    store.create_meeting(title="Standup")
+    store.create_meeting(title="Planning")
+    status, data = _request(f"{_base(url)}api/meetings?q=Planning", token=srv.token)
+    assert status == 200
+    assert len(data) == 1
+    assert data[0]["title"] == "Planning"
+
+
 def test_get_meeting_includes_speakers_and_segments(server):
     srv, store, _actions, url = server
     meeting_id = store.create_meeting(title="Standup")

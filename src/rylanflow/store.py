@@ -69,6 +69,17 @@ _MIGRATIONS: list[str] = [
     );
     CREATE INDEX segments_meeting ON segments(meeting_id, start_s);
     """,
+    # v3: full-text search over meeting segments, same pattern as dictations_fts
+    """
+    CREATE VIRTUAL TABLE segments_fts USING fts5(text, content='segments', content_rowid='id');
+
+    CREATE TRIGGER segments_ai AFTER INSERT ON segments BEGIN
+        INSERT INTO segments_fts(rowid, text) VALUES (new.id, new.text);
+    END;
+    CREATE TRIGGER segments_ad AFTER DELETE ON segments BEGIN
+        INSERT INTO segments_fts(segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
+    END;
+    """,
 ]
 
 
@@ -219,9 +230,23 @@ class Store:
             self._conn.execute("UPDATE meetings SET title = ? WHERE id = ?", (title, meeting_id))
             self._conn.commit()
 
-    def list_meetings(self) -> list[dict]:
+    def list_meetings(self, query: str | None = None) -> list[dict]:
         with self._lock:
-            rows = self._conn.execute("SELECT * FROM meetings ORDER BY started_at DESC").fetchall()
+            if query:
+                # A subquery rather than a JOIN, so a meeting with zero segments but a matching
+                # title (e.g. a freshly started, still-empty meeting) isn't excluded.
+                rows = self._conn.execute(
+                    "SELECT * FROM meetings WHERE "
+                    "id IN (SELECT meeting_id FROM segments WHERE id IN "
+                    "(SELECT rowid FROM segments_fts WHERE segments_fts MATCH ?)) "
+                    "OR title LIKE ? "
+                    "ORDER BY started_at DESC",
+                    (_fts_query(query), f"%{query}%"),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM meetings ORDER BY started_at DESC"
+                ).fetchall()
             return [_meeting_dict(r) for r in rows]
 
     def get_meeting(self, meeting_id: int) -> dict | None:

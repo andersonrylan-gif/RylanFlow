@@ -459,7 +459,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Done when:** added to a local Claude Desktop config, asking it "what did I say in my last
     dictation?" or "summarize my last meeting" round-trips through the MCP tools correctly.
 
-- [ ] **4.2 Meeting search** (promoted from 3.8, needed by 4.1's search tool too).
+- [x] **4.2 Meeting search** (promoted from 3.8, needed by 4.1's search tool too).
   - **Files:** `store.py` (FTS5 virtual table over `segments.text`, same trigger pattern as
     `dictations_fts`), `dashboard/server.py` (`GET /api/meetings?q=`), static files, `mcp_server.py`.
   - **Done when:** searching the dashboard's Meetings tab and the MCP `search_dictations`-style

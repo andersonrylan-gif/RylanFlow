@@ -177,6 +177,55 @@ def test_list_meetings_newest_first(store, clock):
     assert titles == ["second", "first"]
 
 
+def test_search_meetings_by_segment_text(store):
+    standup = store.create_meeting(title="Standup")
+    planning = store.create_meeting(title="Planning")
+    you = store.add_speaker(standup, "You", is_me=True)
+    store.add_segments(
+        standup,
+        [
+            {
+                "speaker_id": you,
+                "track": "mic",
+                "start_s": 0,
+                "end_s": 1,
+                "text": "the roadmap looks good",
+            }
+        ],
+    )
+    you2 = store.add_speaker(planning, "You", is_me=True)
+    store.add_segments(
+        planning,
+        [
+            {
+                "speaker_id": you2,
+                "track": "mic",
+                "start_s": 0,
+                "end_s": 1,
+                "text": "let's discuss budget",
+            }
+        ],
+    )
+
+    results = store.list_meetings(query="roadmap")
+
+    assert [m["id"] for m in results] == [standup]
+
+
+def test_search_meetings_by_title_even_with_no_segments(store):
+    empty = store.create_meeting(title="Empty standup")
+    store.create_meeting(title="Unrelated")
+
+    results = store.list_meetings(query="standup")
+
+    assert [m["id"] for m in results] == [empty]
+
+
+def test_search_meetings_with_no_matches_returns_empty(store):
+    store.create_meeting(title="Standup")
+    assert store.list_meetings(query="nonexistent") == []
+
+
 def test_speakers_and_segments_round_trip(store):
     mid = store.create_meeting(title="1:1")
     you = store.add_speaker(mid, "You", display_name="Rylan", is_me=True)
