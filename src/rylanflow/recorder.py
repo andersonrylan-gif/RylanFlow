@@ -58,10 +58,18 @@ class Recorder:
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
         self._closing: list[tuple[threading.Thread, float]] = []
+        self._level = 0.0  # RMS of the most recent audio block, for the dictation pop-up
 
     @property
     def recording(self) -> bool:
         return self._stream is not None
+
+    @property
+    def level(self) -> float:
+        """RMS of the most recent audio block, for the dictation pop-up's level meter. A plain
+        float read/write is safe here without a lock: it's just the latest reading for a UI
+        meter, not data that needs to be exact or consistent with anything else."""
+        return self._level
 
     @property
     def stuck(self) -> bool:
@@ -71,9 +79,11 @@ class Recorder:
         return any(now - since > CLOSE_TIMEOUT for _, since in self._closing)
 
     def _on_audio(self, indata: np.ndarray, frames: int, time, status) -> None:
+        block = indata[:, 0]
+        self._level = float(np.sqrt(np.mean(block.astype(np.float64) ** 2))) if block.size else 0.0
         with self._lock:
             if self._capturing:
-                self._chunks.append(indata[:, 0].copy())
+                self._chunks.append(block.copy())
 
     def _open(self) -> sd.InputStream:
         stream = sd.InputStream(
@@ -105,6 +115,7 @@ class Recorder:
         with self._lock:
             self._capturing = False
             chunks, self._chunks = self._chunks, []
+        self._level = 0.0
         stream, self._stream = self._stream, None
         if stream is not None:
             self._close_in_background(stream)

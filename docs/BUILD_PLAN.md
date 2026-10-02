@@ -226,7 +226,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 
 ### Phase 2: Dictation pop-up (milestone `v0.2 Dashboard & pop-up`)
 
-- [ ] **2.1 Live audio level and overlay model.**
+- [x] **2.1 Live audio level and overlay model.**
   - **Files:** `recorder.py`, `overlay_model.py`, `tests/test_overlay_model.py`, `tests/test_recorder.py`.
   - **Do:**
     - `Recorder.level` returns the RMS of the most recent callback block, as a float in 0..1. Compute it in `_on_audio` (`float(np.sqrt(np.mean(block**2)))`) and store it as a plain float (assignment is atomic).
