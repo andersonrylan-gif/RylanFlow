@@ -307,7 +307,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
     - During a real Google Meet in Chrome (ask the owner to join a test call; meet.new works alone), the script prints Chrome's bundle ID (probably `com.google.Chrome` or `com.google.Chrome.helper`) with `running input = 1`, and a window title containing "Meet".
     - Record the exact bundle IDs and titles seen in the ADR. Also try Zoom if installed.
 
-- [ ] **3.2 Shared transcription service.**
+- [x] **3.2 Shared transcription service.**
   - **Files:** `transcription_service.py`, `transcriber.py`, `pipeline.py`, tests.
   - **Do:**
     - Add `MLXWhisperTranscriber.transcribe_segments(audio, *, meeting=False) -> list[Segment(start, end, text, no_speech_prob, avg_logprob)]` from `mlx_whisper.transcribe(...)["segments"]`. With `meeting=True`, pass `condition_on_previous_text=False` and filter hallucinations (gotcha 10). `transcribe()` stays as-is for dictation.

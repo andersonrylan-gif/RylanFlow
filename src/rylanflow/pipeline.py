@@ -4,7 +4,8 @@ Threads:
 - The hotkey thread only calls press()/release(), which queue an event and return at once.
   It must never block, or macOS stops delivering key events.
 - One "audio-control" thread starts and stops the recorder, in order.
-- Each transcription runs on its own worker thread, one at a time.
+- Transcription happens on a TranscriptionService (its own module): one shared worker thread,
+  so dictation and meeting transcription aren't each running their own copy of Whisper.
 """
 
 import logging
@@ -13,20 +14,15 @@ import threading
 import time
 from collections.abc import Callable
 
-import numpy as np
-
 from rylanflow.recorder import SAMPLE_RATE, AudioStuckError, Recorder
 from rylanflow.transcriber import Transcriber
+from rylanflow.transcription_service import DICTATION_PRIORITY, TranscriptionService
 
 log = logging.getLogger(__name__)
 
 MIN_SECONDS = 0.3  # shorter than this is an accidental tap
 MAX_SECONDS = 10 * 60  # stop recording automatically after this long
-
-
-def transcribe_timeout(audio_seconds: float) -> float:
-    """How long a transcription may take before we treat it as hung."""
-    return 60 + 3 * audio_seconds
+_TAG = "dictation"
 
 
 class Pipeline:
@@ -38,19 +34,21 @@ class Pipeline:
         on_error: Callable[[str], None] | None = None,
         on_cue: Callable[[str], None] | None = None,
         clock=time.monotonic,
+        service: TranscriptionService | None = None,
     ) -> None:
+        """`service` lets dictation share one Whisper worker with meeting transcription; if
+        omitted, Pipeline creates (and owns, and stops on close()) a private one."""
         self._recorder = recorder
         self._transcriber = transcriber
         self._on_text = on_text
         self._on_error = on_error
         self._on_cue = on_cue
         self._clock = clock
+        self._service = service or TranscriptionService(clock=clock)
+        self._owns_service = service is None
         self._events: queue.Queue[str] = queue.Queue()
         self._lock = threading.Lock()  # guards the fields below
         self._recording_since: float | None = None
-        self._jobs: dict[int, float] = {}  # running transcription id -> deadline
-        self._next_job = 0
-        self._transcribe_lock = threading.Lock()  # one transcription at a time
         self._worker = threading.Thread(target=self._loop, name="audio-control", daemon=True)
         self._worker.start()
 
@@ -63,6 +61,8 @@ class Pipeline:
 
     def close(self) -> None:
         self._events.put("quit")
+        if self._owns_service:
+            self._service.stop()
 
     # --- read by the UI ---
     @property
@@ -70,7 +70,7 @@ class Pipeline:
         with self._lock:
             if self._recording_since is not None:
                 return "recording"
-            return "working" if self._jobs else "idle"
+        return "working" if self._service.pending_count(_TAG) else "idle"
 
     def tick(self) -> None:
         """Call periodically. Ends recordings that run past MAX_SECONDS."""
@@ -82,12 +82,12 @@ class Pipeline:
 
     def restart_reason(self) -> str | None:
         """Why the app should restart itself, or None. Waits for pending pastes to finish."""
-        now = self._clock()
-        with self._lock:
-            hung = any(now > deadline for deadline in self._jobs.values())
-            busy = bool(self._jobs) or self._recording_since is not None
+        hung = self._service.restart_reason()
         if hung:
-            return "a transcription stopped responding"
+            return hung
+        with self._lock:
+            busy = self._recording_since is not None
+        busy = busy or self._service.pending_count(_TAG) > 0
         if self._recorder.stuck and not busy:
             return "the microphone stopped responding"
         return None
@@ -124,27 +124,19 @@ class Pipeline:
         self._cue("stop")
         if audio.size < MIN_SECONDS * SAMPLE_RATE:
             return
-        with self._lock:
-            job = self._next_job
-            self._next_job += 1
-            self._jobs[job] = self._clock() + transcribe_timeout(audio.size / SAMPLE_RATE)
-        threading.Thread(
-            target=self._transcribe, args=(job, audio), name="transcribe", daemon=True
-        ).start()
+        seconds = audio.size / SAMPLE_RATE
+        self._service.submit(
+            self._transcriber.transcribe,
+            audio,
+            DICTATION_PRIORITY,
+            callback=lambda text: self._handle_text(text, seconds),
+            on_error=self._error,
+            tag=_TAG,
+        )
 
-    # --- transcription thread ---
-    def _transcribe(self, job: int, audio: np.ndarray) -> None:
-        try:
-            with self._transcribe_lock:
-                text = self._transcriber.transcribe(audio)
-            if text:
-                self._on_text(text, audio.size / SAMPLE_RATE)
-        except Exception:
-            log.exception("transcription or insertion failed")
-            self._error("Transcription failed. See the log for details.")
-        finally:
-            with self._lock:
-                self._jobs.pop(job, None)
+    def _handle_text(self, text: str, seconds: float) -> None:
+        if text:
+            self._on_text(text, seconds)
 
     def _cue(self, name: str) -> None:
         if self._on_cue:
