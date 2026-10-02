@@ -1,7 +1,8 @@
 """Pure logic for cleaning up what the mic heard: dropping silence, and dropping mic segments
 that just picked up the system audio (the other participants) because the user isn't wearing
-headphones. (Diarization -- splitting system audio into Speaker 1, 2, ... -- is step 3.5; this
-module only handles the mic side.)
+headphones. Also the pure half of diarization (step 3.5) -- assigning each system-track segment
+to a speaker turn; the impure half (actually running a diarization model over system.wav to
+produce those turns) lives in meetings/diarize.py.
 """
 
 import difflib
@@ -46,3 +47,28 @@ def is_echo(
         if similarity >= ECHO_TEXT_SIMILARITY:
             return True
     return False
+
+
+def assign(segments: list[dict], turns: list[tuple[float, float, int]]) -> dict[int, int]:
+    """Maps each segment's id to a 0-based speaker index: whichever diarization turn overlaps
+    it the most, in seconds. If nothing overlaps at all (or two turns tie exactly), the nearest
+    turn by center-to-center distance wins. `turns` is (start, end, speaker_index) triples from
+    meetings/diarize.py, `segments` are dicts with at least id/start_s/end_s. Returns {} if
+    there are no turns -- the caller should leave those segments under "Others"."""
+    if not turns:
+        return {}
+    assignments = {}
+    for seg in segments:
+        seg_center = (seg["start_s"] + seg["end_s"]) / 2
+        best_speaker = None
+        best_overlap = -1.0
+        best_distance = float("inf")
+        for start, end, speaker in turns:
+            overlap = max(0.0, min(seg["end_s"], end) - max(seg["start_s"], start))
+            distance = abs((start + end) / 2 - seg_center)
+            if overlap > best_overlap or (overlap == best_overlap and distance < best_distance):
+                best_speaker = speaker
+                best_overlap = overlap
+                best_distance = distance
+        assignments[seg["id"]] = best_speaker
+    return assignments

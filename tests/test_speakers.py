@@ -1,6 +1,6 @@
 import numpy as np
 
-from rylanflow.meetings.speakers import is_echo, is_silent
+from rylanflow.meetings.speakers import assign, is_echo, is_silent
 
 SAMPLE_RATE = 16_000
 
@@ -79,3 +79,40 @@ def test_is_echo_false_with_no_system_segments():
 def test_is_echo_is_case_insensitive():
     system_segments = [(10.0, 12.0, "HELLO THERE")]
     assert is_echo("hello there", 10.0, 12.0, system_segments) is True
+
+
+# --- assign ---
+
+
+def seg(id_, start, end):
+    return {"id": id_, "start_s": start, "end_s": end}
+
+
+def test_assign_with_no_turns_returns_nothing():
+    assert assign([seg(1, 0.0, 5.0)], []) == {}
+
+
+def test_assign_single_speaker():
+    turns = [(0.0, 10.0, 0)]
+    segments = [seg(1, 0.0, 3.0), seg(2, 3.0, 6.0), seg(3, 6.0, 10.0)]
+    assert assign(segments, turns) == {1: 0, 2: 0, 3: 0}
+
+
+def test_assign_two_alternating_speakers():
+    turns = [(0.0, 5.0, 0), (5.0, 10.0, 1), (10.0, 15.0, 0)]
+    segments = [seg(1, 0.0, 4.0), seg(2, 6.0, 9.0), seg(3, 11.0, 14.0)]
+    assert assign(segments, turns) == {1: 0, 2: 1, 3: 0}
+
+
+def test_assign_segment_spanning_two_turns_picks_the_larger_overlap():
+    turns = [(0.0, 3.0, 0), (3.0, 20.0, 1)]
+    # segment [1, 10): 2s with speaker 0, 7s with speaker 1 -- speaker 1 wins
+    segments = [seg(1, 1.0, 10.0)]
+    assert assign(segments, turns) == {1: 1}
+
+
+def test_assign_falls_back_to_the_nearest_turn_when_nothing_overlaps():
+    turns = [(0.0, 2.0, 0), (100.0, 102.0, 1)]
+    # segment [10, 12) overlaps neither turn; turn 0's center (1.0) is closer than turn 1's (101.0)
+    segments = [seg(1, 10.0, 12.0)]
+    assert assign(segments, turns) == {1: 0}
