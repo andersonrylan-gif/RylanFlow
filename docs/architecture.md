@@ -23,10 +23,16 @@ flowchart LR
 5. `ClipboardInserter.insert()` pastes the text into the focused app.
 
 ## Threading
-- The `pynput` listener runs on its own thread and only sets state and starts or stops the recorder.
-- Transcription runs on a worker thread, one at a time, so the hotkey stays responsive.
-- Only the main thread touches the UI: a `rumps` timer reads the shared state every 0.2 s and updates the menu-bar icon.
-- `Pipeline` always calls `on_done`, even on a tap or a failure, so the icon cannot stick on "working".
+- **Hotkey thread (pynput event tap):** only queues "press"/"release" and returns. It must never block: if it does, macOS stops delivering key events.
+- **audio-control thread:** starts and stops the recorder, one event at a time.
+- **mic-close threads:** `Recorder.stop()` returns the captured audio immediately and closes the PortAudio stream in the background, because stopping a stream can deadlock inside CoreAudio.
+- **transcribe threads:** one per dictation, run one at a time.
+- **Main thread:** a `rumps` timer reads `Pipeline.state` every 0.2 s to update the icon, and checks `Pipeline.restart_reason()`.
+
+## Recovering from hangs
+- If a mic stream is still closing after 3 s, or a transcription runs past `60 s + 3 × audio length`, the app logs a thread dump and relaunches itself (after any pending paste finishes).
+- Recordings stop automatically after 10 minutes.
+- `kill -USR1 <pid>` writes every thread's Python stack to the log.
 
 ## Extension points
 - `Transcriber` is a protocol: a cloud engine can be added without touching the rest.

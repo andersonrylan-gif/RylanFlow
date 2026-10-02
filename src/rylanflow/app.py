@@ -2,7 +2,6 @@
 
 import logging
 import subprocess
-import threading
 
 import pyperclip
 import rumps
@@ -13,9 +12,10 @@ from rylanflow.config import Config, load_config, save_config
 from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
 from rylanflow.instance import acquire
-from rylanflow.logs import LOG_PATH, setup_logging
+from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
+from rylanflow.relaunch import relaunch_and_exit
 from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
 
 log = logging.getLogger(__name__)
@@ -45,8 +45,6 @@ class RylanFlowApp(rumps.App):
     def __init__(self, config: Config | None = None) -> None:
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
         self._config = config or load_config()
-        self._state = "idle"
-        self._state_lock = threading.Lock()
         self._last_transcript = ""
         self._transcriber = MLXWhisperTranscriber(self._config.model, self._config.language)
         self._inserter = ClipboardInserter()
@@ -55,10 +53,13 @@ class RylanFlowApp(rumps.App):
             self._recorder,
             self._transcriber,
             on_text=self._on_text,
-            on_done=self._on_done,
             on_error=self._notify_error,
+            on_cue=self._play_cue,
         )
-        self._ptt = PushToTalk(self._on_press, self._on_release, key=self._config.hotkey)
+        self._ptt = PushToTalk(
+            self._pipeline.press, self._pipeline.release, key=self._config.hotkey
+        )
+        self._restarting = False
 
         self._model_items = {}
         model_menu = rumps.MenuItem("Model")
@@ -91,11 +92,6 @@ class RylanFlowApp(rumps.App):
             rumps.MenuItem("Open log", callback=self._open_log),
         ]
 
-    # Hotkey and worker threads only set state; the UI timer below renders it on the main thread.
-    def _set_state(self, state: str) -> None:
-        with self._state_lock:
-            self._state = state
-
     def _notify(self, message: str) -> None:
         """Show a notification. Needs a bundle ID, so fall back to the log when run unpackaged."""
         try:
@@ -106,24 +102,9 @@ class RylanFlowApp(rumps.App):
     def _notify_error(self, message: str) -> None:
         self._notify(message)
 
-    def _on_press(self) -> None:
-        try:
-            self._pipeline.start_recording()
-        except Exception:
-            log.exception("could not start recording")
-            self._notify_error("Can't open the microphone. Check Microphone permission and input.")
-            return
-        self._set_state("recording")
+    def _play_cue(self, name: str) -> None:
         if self._config.sounds:
-            sounds.play("start")
-
-    def _on_release(self) -> None:
-        if self._state != "recording":
-            return
-        self._set_state("working")
-        if self._config.sounds:
-            sounds.play("stop")
-        self._pipeline.stop_and_transcribe()
+            sounds.play(name)
 
     def _on_text(self, text: str) -> None:
         if self._config.remove_fillers:
@@ -134,15 +115,19 @@ class RylanFlowApp(rumps.App):
         log.info("transcribed %d characters", len(text))
         self._inserter.insert(text)
 
-    def _on_done(self) -> None:
-        self._set_state("idle")
-
+    # Runs on the main thread: the only place that touches the UI.
     @rumps.timer(0.2)
     def _render(self, _) -> None:
-        with self._state_lock:
-            icon = ICONS[self._state]
+        icon = ICONS[self._pipeline.state]
         if self.title != icon:
             self.title = icon
+        self._pipeline.tick()
+        reason = self._pipeline.restart_reason()
+        if reason and not self._restarting:
+            self._restarting = True
+            log.error("restarting because %s", reason)
+            dump_threads()
+            relaunch_and_exit()
 
     def _pick_model(self, sender: rumps.MenuItem) -> None:
         self._config.model = MODELS[sender.title]
