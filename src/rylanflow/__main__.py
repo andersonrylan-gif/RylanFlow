@@ -6,6 +6,7 @@ import numpy as np
 
 from rylanflow import __version__
 from rylanflow.hotkey import PushToTalk
+from rylanflow.inserter import ClipboardInserter
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import SAMPLE_RATE, Recorder, write_wav
 from rylanflow.transcriber import DEFAULT_MODEL, MLXWhisperTranscriber
@@ -35,9 +36,11 @@ def transcribe(path: str, model: str) -> None:
     print(MLXWhisperTranscriber(model).transcribe(read_wav(path)))
 
 
-def listen(model: str, key: str) -> None:
+def listen(model: str, key: str, paste: bool) -> None:
     transcriber = MLXWhisperTranscriber(model)
-    pipeline = Pipeline(Recorder(), transcriber, on_text=print)
+    pipeline = Pipeline(
+        Recorder(), transcriber, on_text=ClipboardInserter().insert if paste else print
+    )
     ptt = PushToTalk(pipeline.start_recording, pipeline.stop_and_transcribe, key=key)
     print(f"Loading {model}... hold [{key}] to talk, release to transcribe. Ctrl+C to quit.")
     transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))  # warm up
@@ -62,6 +65,7 @@ def main() -> None:
     ls = sub.add_parser("listen", help="hold a key to talk; print the transcript on release")
     ls.add_argument("-m", "--model", default=DEFAULT_MODEL)
     ls.add_argument("-k", "--key", default="alt_r", help="pynput key name (default alt_r)")
+    ls.add_argument("--paste", action="store_true", help="paste into the focused app")
     args = parser.parse_args()
 
     if args.command == "record":
@@ -69,7 +73,7 @@ def main() -> None:
     elif args.command == "transcribe":
         transcribe(args.file, args.model)
     elif args.command == "listen":
-        listen(args.model, args.key)
+        listen(args.model, args.key, args.paste)
     else:
         print(f"RylanFlow {__version__}")
 
