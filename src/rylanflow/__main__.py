@@ -66,6 +66,7 @@ def main() -> None:
     ls.add_argument("-k", "--key", default="alt_r", help="pynput key name (default alt_r)")
     ls.add_argument("--paste", action="store_true", help="paste into the focused app")
     sub.add_parser("app", help="run the menu-bar app")
+    sub.add_parser("mcp", help="run the MCP server (dictations/meetings, read-only, stdio)")
     auto = sub.add_parser("autostart", help="start the menu-bar app at login")
     auto.add_argument("action", choices=["on", "off", "status"])
     args = parser.parse_args()
@@ -80,6 +81,10 @@ def main() -> None:
         from rylanflow.app import main as run_app  # imports AppKit, keep it lazy
 
         run_app()
+    elif args.command == "mcp":
+        from rylanflow.mcp_server import main as run_mcp_server  # imports mcp, keep it lazy
+
+        run_mcp_server()
     elif args.command == "autostart":
         from rylanflow import autostart
 

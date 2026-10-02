@@ -57,6 +57,25 @@ Other commands: `rylanflow record`, `rylanflow transcribe FILE.wav`, `rylanflow 
 ### macOS permissions
 The app needs **Microphone**, **Accessibility** (to paste text) and **Input Monitoring** (for the global hotkey). macOS grants these to the app that launched it, so when you run from VS Code's terminal, add **Visual Studio Code** in *System Settings → Privacy & Security* (and Terminal, if you run it there), then restart that app.
 
+## MCP: use your dictations and meeting notes from Claude (or any MCP client)
+
+`rylanflow mcp` runs a local, read-only MCP server over your own dictation and meeting history (the same SQLite database the app already writes to on your Mac — nothing leaves your machine, and nothing new is captured). It exposes three tools: `list_dictations`, `list_meetings` and `get_meeting_transcript`, each optionally filtered by a search query. It runs standalone; the menu-bar app doesn't need to be running.
+
+Add it to Claude Desktop's config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "rylanflow": {
+      "command": "uv",
+      "args": ["run", "--project", "/absolute/path/to/RylanFlow", "rylanflow", "mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop, then ask it something like "what did I say in my last dictation?" or "summarize what we decided in my meeting with X."
+
 ## Development
 
 ```bash
