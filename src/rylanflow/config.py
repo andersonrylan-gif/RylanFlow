@@ -19,6 +19,7 @@ class Config:
     language: str | None = None  # e.g. "en"; None lets Whisper auto-detect
     sounds: bool = True  # play a cue when recording starts and stops
     remove_fillers: bool = True  # drop "um" / "uh" from transcripts
+    dashboard_seen: bool = False  # True once the dashboard has auto-opened on first launch
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -38,6 +39,7 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
         f'model = "{config.model}"',
         f"sounds = {str(config.sounds).lower()}",
         f"remove_fillers = {str(config.remove_fillers).lower()}",
+        f"dashboard_seen = {str(config.dashboard_seen).lower()}",
     ]
     if config.language:
         lines.append(f'language = "{config.language}"')
