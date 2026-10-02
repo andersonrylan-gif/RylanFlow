@@ -1,6 +1,6 @@
 [project]
 name = "rylanflow"
-version = "0.1.0"
+version = "0.1.1"
 description = "Hold a key, talk, release: on-device dictation for macOS."
 readme = "README.md"
 requires-python = ">=3.12"
