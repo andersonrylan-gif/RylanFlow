@@ -33,7 +33,46 @@
 
     <section id="view-settings" hidden>
       <h1>Settings</h1>
-      <p class="empty">Settings are on the way — for now, use the RylanFlow menu-bar icon.</p>
+
+      <div class="settings-row">
+        <div>
+          <div class="label">Hotkey</div>
+          <div class="hint">Hold this key to dictate</div>
+        </div>
+        <select id="setting-hotkey"></select>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="label">Model</div>
+          <div class="hint">Accurate is slower but more precise</div>
+        </div>
+        <select id="setting-model"></select>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="label">Sound cues</div>
+          <div class="hint">Play a sound when recording starts and stops</div>
+        </div>
+        <div class="toggle" id="setting-sounds" data-key="sounds"><div class="knob"></div></div>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="label">Remove um / uh</div>
+          <div class="hint">Clean up filler words before pasting</div>
+        </div>
+        <div class="toggle" id="setting-remove_fillers" data-key="remove_fillers"><div class="knob"></div></div>
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="label">Start at login</div>
+          <div class="hint">Launch RylanFlow automatically when you log in</div>
+        </div>
+        <div class="toggle" id="setting-start_at_login" data-key="start_at_login"><div class="knob"></div></div>
+      </div>
     </section>
   </main>
 </div>

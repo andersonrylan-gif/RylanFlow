@@ -11,11 +11,25 @@ from rylanflow.store import Store
 
 
 class FakeActions:
+    def __init__(self):
+        self.settings = {
+            "hotkey": "alt_r",
+            "model": "mlx-community/whisper-base-mlx",
+            "sounds": True,
+            "remove_fillers": True,
+            "start_at_login": False,
+            "available_hotkeys": {"Right Option": "alt_r", "Right Command": "cmd_r"},
+            "available_models": {
+                "Fast (base)": "mlx-community/whisper-base-mlx",
+                "Accurate (large-v3-turbo)": "mlx-community/whisper-large-v3-turbo",
+            },
+        }
+
     def get_settings(self):
-        return {"hotkey": "alt_r", "model": "base", "sounds": True, "remove_fillers": True}
+        return self.settings
 
     def apply_settings(self, changes):
-        pass
+        self.settings.update(changes)
 
 
 def main():

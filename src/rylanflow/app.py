@@ -8,7 +8,7 @@ import pyperclip
 import rumps
 from PyObjCTools import AppHelper
 
-from rylanflow import sounds
+from rylanflow import autostart, sounds
 from rylanflow.cleanup import remove_fillers
 from rylanflow.config import Config, load_config, save_config
 from rylanflow.dashboard.server import DashboardServer
@@ -193,6 +193,8 @@ class RylanFlowApp(rumps.App):
         if "remove_fillers" in changes:
             self._config.remove_fillers = bool(changes["remove_fillers"])
             self._fillers_item.state = int(self._config.remove_fillers)
+        if "start_at_login" in changes:
+            (autostart.enable if changes["start_at_login"] else autostart.disable)()
         save_config(self._config)
         return self.get_settings()
 
@@ -204,6 +206,10 @@ class RylanFlowApp(rumps.App):
             "model": self._config.model,
             "sounds": self._config.sounds,
             "remove_fillers": self._config.remove_fillers,
+            "start_at_login": autostart.is_enabled(),
+            # So the dashboard's Settings page never hardcodes these choices itself.
+            "available_hotkeys": HOTKEYS,
+            "available_models": MODELS,
         }
 
     def apply_settings(self, changes: dict) -> None:

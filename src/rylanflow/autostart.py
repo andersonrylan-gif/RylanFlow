@@ -53,6 +53,11 @@ def real_python() -> str:
     return os.path.realpath(sys.executable)
 
 
+def is_enabled() -> bool:
+    """Cheap check for UI purposes: whether the LaunchAgent is installed."""
+    return PLIST_PATH.exists()
+
+
 def enable() -> str:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
