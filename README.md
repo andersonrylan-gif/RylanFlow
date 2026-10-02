@@ -63,8 +63,11 @@ uv run ruff check .  # lint
 ```
 
 ## Roadmap
-- **v0.1 — Dictation:** ✅ push-to-talk recording, local transcription, paste into any app, menu-bar app. packaged `.app` (v0.1.1)
-- **v0.2 — Meetings:** capture mic + system audio, live chunked transcription, Markdown meeting notes
+- **v0.1 — Dictation:** ✅ push-to-talk recording, local transcription, paste into any app, menu-bar app, packaged `.app` (v0.1.1)
+- **v0.2 — Dashboard & pop-up:** a dashboard window with your recent dictations, search and settings; a small floating pop-up while you dictate
+- **v0.3 — Meetings:** capture mic + system audio, live transcription with speaker labels, calendar-suggested names, auto-record
+
+See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the detailed, step-by-step plan for v0.2 and v0.3.
 
 ## License
 [MIT](LICENSE)
