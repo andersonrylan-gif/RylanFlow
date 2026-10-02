@@ -419,6 +419,57 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
     - Update the changelog, README (meetings section, permissions: Screen & System Audio Recording, Calendars) and architecture doc; add ADR 0004 (local diarization). Write an ADR for anything surprising.
     - Build, install, have the owner run a real meeting, then **ask before publishing** the release.
 
+### Phase 4: Competitive parity & MCP integration (milestone `v0.4 Parity & MCP`)
+
+> Added after comparing RylanFlow against its two direct targets, Wispr Flow (dictation +
+> Notetaker) and Krisp (meeting assistant), per the owner's explicit "replace both of these"
+> direction. Findings (both researched live, see PR history around 2026-10-02):
+> - **Wispr Flow Notetaker** (launched 2026-08-05): system-audio meeting capture without joining
+>   a bot into the call (same approach RylanFlow already took in 3.0/3.3), a live "What did I
+>   miss?" catch-up query, topic-organized AI summaries, and -- directly relevant here --
+>   **ships MCP access to meeting notes** as a real, shipped feature of a competing product.
+> - **Krisp**: on-device audio processing (same local-first stance as RylanFlow), speaker
+>   identification with timestamps (this is step 3.5, currently blocked -- see ADR 0004), and
+>   AI-generated meeting notes/action items.
+> - **Gap that is a real decision, not an engineering task:** both competitors generate AI
+>   summaries and action items (cloud-side, in their case). RylanFlow was explicitly scoped as
+>   "transcripts only, no AI summaries, everything stays on the Mac" (section 1). Closing this
+>   gap means either running a local LLM for summarization (keeps the privacy stance, adds
+>   meaningful complexity and disk/RAM cost) or calling a cloud API (breaks the stance). **Don't
+>   build this without the owner picking one** -- flagged, not decided, as of this writing.
+
+- [ ] **4.1 MCP server: expose dictations and meetings to other AI tools.**
+  - **Files:** `src/rylanflow/mcp_server.py` (new), `src/rylanflow/__main__.py` (new `mcp`
+    subcommand), `pyproject.toml` (`uv add mcp`, the official Python SDK).
+  - **Do:**
+    - Use `mcp.server.fastmcp.FastMCP`, stdio transport (the standard local-process pattern
+      Claude Desktop and other local MCP clients spawn via their own config, same shape as
+      Wispr Flow's "MCP access to meeting notes").
+    - Read-only tools to start, all backed by the existing `Store` (no new storage):
+      `list_dictations(query=None, limit=50)`, `search_dictations(query)`,
+      `list_meetings(limit=20)`, `get_meeting_transcript(meeting_id)` (speaker-labeled, same
+      shape as the dashboard's detail view and the `export.md` format from 3.8).
+    - `rylanflow mcp` runs the server standalone (its own `Store()`, independent of whether the
+      menu-bar app is running) -- an MCP client config points at this command directly, the same
+      way a user would add any other local MCP server.
+    - Document the exact Claude Desktop config block in the README (command, args, working
+      directory).
+  - **Tests:** call each tool function directly against a temp-path `Store` (no need to spin up
+    a real MCP client/transport for unit tests).
+  - **Done when:** added to a local Claude Desktop config, asking it "what did I say in my last
+    dictation?" or "summarize my last meeting" round-trips through the MCP tools correctly.
+
+- [ ] **4.2 Meeting search** (promoted from 3.8, needed by 4.1's search tool too).
+  - **Files:** `store.py` (FTS5 virtual table over `segments.text`, same trigger pattern as
+    `dictations_fts`), `dashboard/server.py` (`GET /api/meetings?q=`), static files, `mcp_server.py`.
+  - **Done when:** searching the dashboard's Meetings tab and the MCP `search_dictations`-style
+    tool both find the right meeting by something someone said in it.
+
+- [ ] **4.3 Personal vocabulary carried from dictation into meetings** (Wispr Flow does this).
+  - If RylanFlow ever gains a custom-word/acronym list for dictation (it doesn't yet), apply the
+    same list when transcribing meeting chunks (`transcribe_segments`). Lower priority than 4.1/4.2;
+    only start this once a dictation vocabulary feature exists to carry over.
+
 ---
 
 ## 7. Verification checklist (run at each release)
