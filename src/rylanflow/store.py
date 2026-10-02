@@ -145,10 +145,12 @@ class Store:
                 ).fetchall()
             return [dict(r) for r in rows]
 
-    def delete_dictation(self, dictation_id: int) -> None:
+    def delete_dictation(self, dictation_id: int) -> bool:
+        """Returns whether a row actually existed to delete."""
         with self._lock:
-            self._conn.execute("DELETE FROM dictations WHERE id = ?", (dictation_id,))
+            cur = self._conn.execute("DELETE FROM dictations WHERE id = ?", (dictation_id,))
             self._conn.commit()
+            return cur.rowcount > 0
 
     def stats(self) -> dict:
         with self._lock:
