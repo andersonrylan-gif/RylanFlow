@@ -104,8 +104,10 @@ def test_dashboard_server_starts_and_serves_real_settings(make_app, monkeypatch)
     assert settings["sounds"] is True
     assert settings["remove_fillers"] is True
     assert settings["start_at_login"] is False
+    assert settings["overlay"] == "bottom"
     assert settings["available_hotkeys"] == app_module.HOTKEYS
     assert settings["available_models"] == app_module.MODELS
+    assert settings["available_overlay_positions"] == app_module.OVERLAY_POSITIONS
 
 
 def test_apply_settings_main_thread_updates_config_live_state_and_menu(make_app):
@@ -142,10 +144,55 @@ def test_apply_settings_main_thread_toggles_start_at_login(make_app, monkeypatch
     assert disabled == [1]
 
 
+def test_apply_settings_main_thread_sets_overlay_position(make_app):
+    app, _store = make_app(overlay="bottom")
+
+    app._apply_settings_main_thread({"overlay": "top"})
+
+    assert app._config.overlay == "top"
+    assert app._overlay._position == "top"
+
+
+def test_apply_settings_main_thread_off_stops_the_overlay_immediately(make_app, monkeypatch):
+    app, _store = make_app(overlay="bottom")
+    stopped = []
+    monkeypatch.setattr(app._overlay, "stop", lambda: stopped.append(1))
+
+    app._apply_settings_main_thread({"overlay": "off"})
+
+    assert app._config.overlay == "off"
+    assert stopped == [1]
+
+
+def test_render_does_not_run_the_overlay_when_turned_off(make_app, monkeypatch):
+    app, _store = make_app(overlay="off")
+    # `state` is a read-only property, so it's patched at the class level for this test.
+    monkeypatch.setattr(type(app._pipeline), "state", property(lambda self: "recording"))
+    ensured = []
+    monkeypatch.setattr(app._overlay, "ensure_running", lambda: ensured.append(1))
+
+    app._render(None)
+
+    assert ensured == []
+
+
+def test_render_runs_the_overlay_while_recording(make_app, monkeypatch):
+    app, _store = make_app(overlay="bottom")
+    monkeypatch.setattr(type(app._pipeline), "state", property(lambda self: "recording"))
+    ensured = []
+    monkeypatch.setattr(app._overlay, "ensure_running", lambda: ensured.append(1))
+
+    app._render(None)
+
+    assert ensured == [1]
+
+
 def test_apply_settings_main_thread_ignores_unknown_values(make_app):
     app, _store = make_app(hotkey="alt_r", model="base-model")
 
-    app._apply_settings_main_thread({"hotkey": "nonexistent_key", "model": "nonexistent_model"})
+    app._apply_settings_main_thread(
+        {"hotkey": "nonexistent_key", "model": "nonexistent_model", "overlay": "sideways"}
+    )
 
     assert app._config.hotkey == "alt_r"
     assert app._config.model == "base-model"

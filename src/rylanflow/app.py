@@ -16,6 +16,7 @@ from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
 from rylanflow.instance import acquire
 from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
+from rylanflow.overlay import Overlay
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
@@ -35,6 +36,11 @@ HOTKEYS = {
 MODELS = {
     "Fast (base)": FAST_MODEL,
     "Accurate (large-v3-turbo)": DEFAULT_MODEL,
+}
+OVERLAY_POSITIONS = {
+    "Bottom": "bottom",
+    "Top": "top",
+    "Off": "off",
 }
 
 
@@ -79,6 +85,9 @@ class RylanFlowApp(rumps.App):
             self._pipeline.press, self._pipeline.release, key=self._config.hotkey
         )
         self._restarting = False
+
+        self._overlay = Overlay(position=self._config.overlay)
+        self._overlay.set_sources(lambda: self._pipeline.state, lambda: self._recorder.level)
 
         # `self` satisfies the dashboard's Actions protocol (get_settings/apply_settings below).
         self._dashboard = DashboardServer(self._store, self)
@@ -154,6 +163,8 @@ class RylanFlowApp(rumps.App):
         if self.title != icon:
             self.title = icon
         self._pipeline.tick()
+        if self._config.overlay != "off" and self._pipeline.state != "idle":
+            self._overlay.ensure_running()  # cheap no-op once it's already running
         reason = self._pipeline.restart_reason()
         if reason and not self._restarting:
             self._restarting = True
@@ -195,6 +206,12 @@ class RylanFlowApp(rumps.App):
             self._fillers_item.state = int(self._config.remove_fillers)
         if "start_at_login" in changes:
             (autostart.enable if changes["start_at_login"] else autostart.disable)()
+        if (overlay := changes.get("overlay")) in OVERLAY_POSITIONS.values():
+            self._config.overlay = overlay
+            if overlay == "off":
+                self._overlay.stop()  # hide immediately, don't wait for the current fade
+            else:
+                self._overlay.set_position(overlay)
         save_config(self._config)
         return self.get_settings()
 
@@ -207,9 +224,11 @@ class RylanFlowApp(rumps.App):
             "sounds": self._config.sounds,
             "remove_fillers": self._config.remove_fillers,
             "start_at_login": autostart.is_enabled(),
+            "overlay": self._config.overlay,
             # So the dashboard's Settings page never hardcodes these choices itself.
             "available_hotkeys": HOTKEYS,
             "available_models": MODELS,
+            "available_overlay_positions": OVERLAY_POSITIONS,
         }
 
     def apply_settings(self, changes: dict) -> None:

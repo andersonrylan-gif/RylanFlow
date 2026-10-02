@@ -180,6 +180,7 @@
   function renderSettings(settings) {
     fillSelect(document.getElementById("setting-hotkey"), settings.available_hotkeys, settings.hotkey);
     fillSelect(document.getElementById("setting-model"), settings.available_models, settings.model);
+    fillSelect(document.getElementById("setting-overlay"), settings.available_overlay_positions, settings.overlay);
     for (const key of ["sounds", "remove_fillers", "start_at_login"]) {
       document.getElementById(`setting-${key}`).classList.toggle("on", !!settings[key]);
     }
@@ -191,6 +192,7 @@
 
   document.getElementById("setting-hotkey").addEventListener("change", (e) => putSettings({ hotkey: e.target.value }));
   document.getElementById("setting-model").addEventListener("change", (e) => putSettings({ model: e.target.value }));
+  document.getElementById("setting-overlay").addEventListener("change", (e) => putSettings({ overlay: e.target.value }));
   for (const key of ["sounds", "remove_fillers", "start_at_login"]) {
     document.getElementById(`setting-${key}`).addEventListener("click", (e) => {
       const nowOn = !e.currentTarget.classList.contains("on");
