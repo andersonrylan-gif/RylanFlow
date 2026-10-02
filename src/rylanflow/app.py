@@ -319,6 +319,7 @@ class RylanFlowApp(rumps.App):
     # applies the (debounced) decision on the main thread ---
 
     def _meeting_detector_loop(self) -> None:
+        last_mic_ids: frozenset[str] = frozenset()
         while True:
             time.sleep(DETECTOR_POLL_INTERVAL)
             if not self._config.auto_record_meetings:
@@ -329,9 +330,18 @@ class RylanFlowApp(rumps.App):
             except Exception:
                 log.exception("meeting detector probe failed")
                 continue
+            # Logged only on change (not every poll), so a long meeting doesn't flood the log --
+            # this is the one line that answers "did the detector ever even see a meeting app
+            # using the mic?" when auto-record doesn't behave as expected.
+            mic_ids = frozenset(signals.mic_bundle_ids)
+            if mic_ids != last_mic_ids:
+                log.info("meeting detector: mic now in use by %s", sorted(mic_ids) or "nothing")
+                last_mic_ids = mic_ids
             if isinstance(decision, Start):
+                log.info("meeting detector: starting (looks like %s)", decision.app_name)
                 AppHelper.callAfter(lambda app_name=decision.app_name: self._auto_start(app_name))
             elif isinstance(decision, Stop):
+                log.info("meeting detector: stopping (signal has been gone for a while)")
                 AppHelper.callAfter(self._auto_stop)
 
     def _auto_start(self, app_name: str) -> None:
@@ -370,6 +380,7 @@ class RylanFlowApp(rumps.App):
                 "Grant Accessibility and Input Monitoring in System Settings, then restart."
             )
         self._ptt.start()
+        log.info("auto-record meetings: %s", self._config.auto_record_meetings)
         threading.Thread(
             target=self._meeting_detector_loop, name="meeting-detector", daemon=True
         ).start()
