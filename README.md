@@ -15,21 +15,23 @@ flowchart LR
     A[Menu-bar app<br/>rumps] -.coordinates.- H & R & T & I
 ```
 
-Each stage is a small module behind an interface, so pieces can be swapped or reused (the v0.2 meeting recorder reuses the recorder and transcriber unchanged).
+Each stage is a small module behind an interface, so pieces can be swapped or reused (the v0.3 meeting recorder reuses the recorder and transcriber unchanged).
 
-See [docs/architecture.md](docs/architecture.md) and the [decision records](docs/decisions/) for the design.
+See [docs/architecture.md](docs/architecture.md), [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) and the [decision records](docs/decisions/) for the design.
 
 ## Features
 - Hold **Right Option**, talk, release: the transcript is pasted into the focused app and your clipboard is restored
 - Runs Whisper on-device (mlx-whisper), so it is free, private and works offline
+- A floating **dictation pop-up** shows a live level meter while you talk, and a pulsing indicator while it transcribes — over full-screen apps, without stealing focus
+- A **dashboard** (menu: Open Dashboard…) with your recent dictations, search, stats and settings, opens automatically the first time you launch RylanFlow
+- Every dictation is saved locally (SQLite, `~/Library/Application Support/RylanFlow/`) so you can search and copy past ones
 - Menu-bar icon shows idle 🎙, recording 🔴 and transcribing ⏳
-- Menu: pick the model and hotkey, toggle sound cues and um/uh removal, **Copy last transcript**, **Open log**
-- Settings in `~/.config/rylanflow/config.toml` (`hotkey`, `model`, `language`)
+- Settings (menu or dashboard): hotkey, model, pop-up position, sound cues, um/uh removal, start at login
 
 ## Install
 
 **Download the app (Apple Silicon Macs):**
-1. Download `RylanFlow-0.1.1-macos-arm64.zip` from the [latest release](https://github.com/andersonrylan-gif/RylanFlow/releases/latest) and unzip it.
+1. Download `RylanFlow-0.2.0-macos-arm64.zip` from the [latest release](https://github.com/andersonrylan-gif/RylanFlow/releases/latest) and unzip it.
 2. Drag **RylanFlow** into **Applications**.
 3. The app isn't notarized, so the first time, right-click it, choose **Open**, then **Open** again.
 4. Grant **Microphone**, **Accessibility** and **Input Monitoring** to RylanFlow in *System Settings → Privacy & Security*, then quit it from the 🎙 menu and open it again.
@@ -64,7 +66,7 @@ uv run ruff check .  # lint
 
 ## Roadmap
 - **v0.1 — Dictation:** ✅ push-to-talk recording, local transcription, paste into any app, menu-bar app, packaged `.app` (v0.1.1)
-- **v0.2 — Dashboard & pop-up:** a dashboard window with your recent dictations, search and settings; a small floating pop-up while you dictate
+- **v0.2 — Dashboard & pop-up:** ✅ a dashboard window with your recent dictations, search and settings; a dictation pop-up (v0.2.0)
 - **v0.3 — Meetings:** capture mic + system audio, live transcription with speaker labels, calendar-suggested names, auto-record
 
 See [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) for the detailed, step-by-step plan for v0.2 and v0.3.
