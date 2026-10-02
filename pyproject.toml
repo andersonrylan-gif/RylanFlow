@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Hold a key, talk, release: on-device dictation for macOS."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "numpy>=2.5.3",
+    "sounddevice>=0.5.6",
+]
 
 [project.scripts]
 rylanflow = "rylanflow.__main__:main"
