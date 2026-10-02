@@ -34,7 +34,7 @@ class Pipeline:
         self,
         recorder: Recorder,
         transcriber: Transcriber,
-        on_text: Callable[[str], None],
+        on_text: Callable[[str, float], None],
         on_error: Callable[[str], None] | None = None,
         on_cue: Callable[[str], None] | None = None,
         clock=time.monotonic,
@@ -138,7 +138,7 @@ class Pipeline:
             with self._transcribe_lock:
                 text = self._transcriber.transcribe(audio)
             if text:
-                self._on_text(text)
+                self._on_text(text, audio.size / SAMPLE_RATE)
         except Exception:
             log.exception("transcription or insertion failed")
             self._error("Transcription failed. See the log for details.")

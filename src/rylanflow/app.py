@@ -16,6 +16,7 @@ from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
+from rylanflow.store import Store
 from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
 
 log = logging.getLogger(__name__)
@@ -41,10 +42,23 @@ def accessibility_trusted() -> bool:
     return bool(AXIsProcessTrusted())
 
 
+def frontmost_app() -> str | None:
+    """The name of the app the user was dictating into, best-effort."""
+    try:
+        from AppKit import NSWorkspace
+
+        app = NSWorkspace.sharedWorkspace().frontmostApplication()
+        return str(app.localizedName()) if app else None
+    except Exception:
+        log.exception("could not read the frontmost app")
+        return None
+
+
 class RylanFlowApp(rumps.App):
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(self, config: Config | None = None, store: Store | None = None) -> None:
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
         self._config = config or load_config()
+        self._store = store or Store()
         self._last_transcript = ""
         self._transcriber = MLXWhisperTranscriber(self._config.model, self._config.language)
         self._inserter = ClipboardInserter()
@@ -106,13 +120,19 @@ class RylanFlowApp(rumps.App):
         if self._config.sounds:
             sounds.play(name)
 
-    def _on_text(self, text: str) -> None:
+    def _on_text(self, text: str, seconds: float) -> None:
         if self._config.remove_fillers:
             text = remove_fillers(text)
         if not text:
             return
         self._last_transcript = text
         log.info("transcribed %d characters", len(text))
+        try:
+            self._store.add_dictation(text, seconds, frontmost_app(), self._config.model)
+        except Exception:
+            # Losing the pending paste because the database hiccupped would be far worse
+            # than losing the history entry, so this never blocks the insert below.
+            log.exception("could not save the dictation to the store")
         self._inserter.insert(text)
 
     # Runs on the main thread: the only place that touches the UI.

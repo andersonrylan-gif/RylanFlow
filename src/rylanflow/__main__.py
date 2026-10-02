@@ -38,9 +38,8 @@ def transcribe(path: str, model: str) -> None:
 
 def listen(model: str, key: str, paste: bool) -> None:
     transcriber = MLXWhisperTranscriber(model)
-    pipeline = Pipeline(
-        Recorder(), transcriber, on_text=ClipboardInserter().insert if paste else print
-    )
+    insert = ClipboardInserter().insert if paste else print
+    pipeline = Pipeline(Recorder(), transcriber, on_text=lambda text, seconds: insert(text))
     ptt = PushToTalk(pipeline.press, pipeline.release, key=key)
     print(f"Loading {model}... hold [{key}] to talk, release to transcribe. Ctrl+C to quit.")
     transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))  # warm up
