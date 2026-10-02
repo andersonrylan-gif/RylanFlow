@@ -171,7 +171,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 
 ### Phase 1: Dashboard (milestone `v0.2 Dashboard & pop-up`)
 
-- [ ] **1.1 Dashboard API server.**
+- [x] **1.1 Dashboard API server.**
   - **Files:** `src/rylanflow/dashboard/__init__.py`, `dashboard/server.py`, `tests/test_dashboard_server.py`.
   - **Do:**
     - Use `http.server.ThreadingHTTPServer` on `127.0.0.1`, port 0 (random), running in a daemon thread. `DashboardServer(store, actions).start() -> url`, `stop()`.

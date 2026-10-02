@@ -74,8 +74,12 @@ def test_search_handles_special_characters_safely(store):
 
 def test_delete_dictation(store):
     id_ = store.add_dictation("to delete", 1, None, None)
-    store.delete_dictation(id_)
+    assert store.delete_dictation(id_) is True
     assert store.list_dictations() == []
+
+
+def test_delete_nonexistent_dictation_returns_false(store):
+    assert store.delete_dictation(999) is False
 
 
 def test_delete_dictation_removes_it_from_search(store):
