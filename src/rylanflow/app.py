@@ -19,6 +19,7 @@ from rylanflow.instance import acquire
 from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
 from rylanflow.meeting_indicator import MeetingIndicator
 from rylanflow.meetings import detector
+from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.detector_logic import MeetingDetector, Start, Stop
 from rylanflow.meetings.session import MeetingSession
 from rylanflow.overlay import Overlay
@@ -83,6 +84,16 @@ def my_display_name() -> str:
         return "You"
 
 
+def _build_calendar_lookup() -> CalendarLookup | None:
+    """None if EventKit isn't available for some reason -- meetings just keep their app-based
+    title in that case, same as before calendar lookup existed."""
+    try:
+        return CalendarLookup()
+    except Exception:
+        log.exception("could not set up calendar lookup; meeting titles won't use it")
+        return None
+
+
 class RylanFlowApp(rumps.App):
     def __init__(self, config: Config | None = None, store: Store | None = None) -> None:
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
@@ -109,7 +120,11 @@ class RylanFlowApp(rumps.App):
         self._restarting = False
 
         self._meeting_session = MeetingSession(
-            self._store, self._transcription_service, self._transcriber, my_display_name()
+            self._store,
+            self._transcription_service,
+            self._transcriber,
+            my_display_name(),
+            calendar_lookup=_build_calendar_lookup(),
         )
         self._meeting_was_active = False
         self._meeting_detector = MeetingDetector()

@@ -3,6 +3,7 @@ import time
 import numpy as np
 import pytest
 
+from rylanflow.meetings.calendar import Event
 from rylanflow.meetings.session import MeetingSession
 from rylanflow.store import Store
 from rylanflow.transcriber import Segment
@@ -80,7 +81,12 @@ class FakeTranscriber:
 
 
 def make_session(
-    tmp_path, transcriber=None, my_name="Rylan", mic_cls=FakeTrack, system_cls=FakeTrack
+    tmp_path,
+    transcriber=None,
+    my_name="Rylan",
+    mic_cls=FakeTrack,
+    system_cls=FakeTrack,
+    calendar_lookup=None,
 ):
     store = Store(tmp_path / "test.db")
     service = TranscriptionService()
@@ -98,7 +104,13 @@ def make_session(
         return track
 
     session = MeetingSession(
-        store, service, transcriber or FakeTranscriber(), my_name, mic_factory, system_factory
+        store,
+        service,
+        transcriber or FakeTranscriber(),
+        my_name,
+        mic_factory,
+        system_factory,
+        calendar_lookup=calendar_lookup,
     )
     return session, store, service, mic_tracks, system_tracks
 
@@ -295,4 +307,78 @@ def test_start_failure_marks_the_meeting_failed_and_reports_the_error(tmp_path):
         meeting = store.get_meeting(meeting_id)
         assert meeting["status"] == "failed"
     finally:
+        service.stop()
+
+
+class FakeCalendarLookup:
+    def __init__(self, event=None, raises=False):
+        self._event = event
+        self._raises = raises
+        self.calls = 0
+
+    def current_event(self, at):
+        self.calls += 1
+        if self._raises:
+            raise RuntimeError("calendar access denied")
+        return self._event
+
+
+def test_calendar_event_sets_the_title_and_attendees(tmp_path):
+    lookup = FakeCalendarLookup(
+        Event(title="Weekly sync", event_id="abc", attendees=["Sarah", "John"], url=None)
+    )
+    session, store, service, mic_tracks, _system_tracks = make_session(
+        tmp_path, calendar_lookup=lookup
+    )
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: lookup.calls > 0)
+        assert wait_for(lambda: store.get_meeting(meeting_id)["title"] == "Weekly sync")
+        meeting = store.get_meeting(meeting_id)
+        assert meeting["attendees"] == ["Sarah", "John"]
+    finally:
+        session.stop()
+        service.stop()
+
+
+def test_no_calendar_event_leaves_the_title_unset(tmp_path):
+    lookup = FakeCalendarLookup(event=None)
+    session, store, service, _mic_tracks, _system_tracks = make_session(
+        tmp_path, calendar_lookup=lookup
+    )
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: lookup.calls > 0)
+        assert store.get_meeting(meeting_id)["title"] is None
+    finally:
+        session.stop()
+        service.stop()
+
+
+def test_a_failed_calendar_lookup_does_not_break_the_meeting(tmp_path):
+    lookup = FakeCalendarLookup(raises=True)
+    session, store, service, mic_tracks, _system_tracks = make_session(
+        tmp_path, calendar_lookup=lookup
+    )
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: mic_tracks and mic_tracks[0].started)
+        assert wait_for(lambda: lookup.calls > 0)
+        assert session.active
+        assert store.get_meeting(meeting_id)["status"] == "recording"
+    finally:
+        session.stop()
+        service.stop()
+
+
+def test_without_a_calendar_lookup_nothing_happens(tmp_path):
+    # calendar_lookup defaults to None -- the common case in production until the owner
+    # grants Calendar access, and always the case in these other tests.
+    session, store, service, mic_tracks, _system_tracks = make_session(tmp_path)
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: mic_tracks and mic_tracks[0].started)
+        assert store.get_meeting(meeting_id)["title"] is None
+    finally:
+        session.stop()
         service.stop()

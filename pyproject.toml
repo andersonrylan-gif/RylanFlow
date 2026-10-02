@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=2.5.3",
     "pynput>=1.8.2",
     "pyobjc-framework-coremedia>=12.2.2",
+    "pyobjc-framework-eventkit>=12.2.2",
     "pyobjc-framework-libdispatch>=12.2.2",
     "pyobjc-framework-screencapturekit>=12.2.2",
     "pyobjc-framework-webkit>=12.2.2",

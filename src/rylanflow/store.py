@@ -230,6 +230,14 @@ class Store:
             self._conn.execute("UPDATE meetings SET title = ? WHERE id = ?", (title, meeting_id))
             self._conn.commit()
 
+    def set_meeting_attendees(self, meeting_id: int, attendees: list[str]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE meetings SET attendees_json = ? WHERE id = ?",
+                (json.dumps(attendees), meeting_id),
+            )
+            self._conn.commit()
+
     def list_meetings(self, query: str | None = None) -> list[dict]:
         with self._lock:
             if query:

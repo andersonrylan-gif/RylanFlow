@@ -11,6 +11,7 @@ uv run pyinstaller --noconfirm --windowed --name RylanFlow \
   --osx-bundle-identifier com.rylananderson.rylanflow \
   --collect-all mlx --collect-all mlx_whisper --collect-all sounddevice \
   --hidden-import rumps --hidden-import pynput.keyboard._darwin --hidden-import WebKit \
+  --hidden-import EventKit \
   --add-data "../src/rylanflow/dashboard/static:rylanflow/dashboard/static" \
   --distpath packaging/dist --workpath packaging/build --specpath packaging \
   packaging/launcher.py
@@ -18,6 +19,7 @@ PLIST=packaging/dist/RylanFlow.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'RylanFlow records your voice to transcribe it on this Mac.'" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :NSScreenCaptureUsageDescription string 'RylanFlow captures system audio (what the other meeting participants say) to transcribe meetings on this Mac. No video or screen content is read.'" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :NSCalendarsFullAccessUsageDescription string 'RylanFlow checks for a calendar event around when a meeting starts, to suggest its title and attendees.'" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.2.0" "$PLIST"
 
 SIGN_IDENTITY="-"  # ad-hoc fallback
