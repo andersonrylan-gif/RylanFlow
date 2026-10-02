@@ -60,9 +60,8 @@ def test_parse_key():
         parse_key("nope")
 
 
-@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_on_done_fires_even_for_taps_and_failures():
-    done = []
+    done, errors = [], []
 
     class Boom:
         def transcribe(self, audio):
@@ -73,7 +72,8 @@ def test_on_done_fires_even_for_taps_and_failures():
         (np.ones(SAMPLE_RATE, dtype=np.float32), Boom()),
     ]:
         pipeline = Pipeline(
-            FakeRecorder(audio), transcriber, lambda t: None, lambda: done.append(1)
+            FakeRecorder(audio), transcriber, lambda t: None, lambda: done.append(1), errors.append
         )
         pipeline.stop_and_transcribe().join()
     assert done == [1, 1]
+    assert len(errors) == 1  # only the model failure is reported
