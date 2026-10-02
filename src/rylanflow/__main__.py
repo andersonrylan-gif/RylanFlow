@@ -5,6 +5,8 @@ import wave
 import numpy as np
 
 from rylanflow import __version__
+from rylanflow.hotkey import PushToTalk
+from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import SAMPLE_RATE, Recorder, write_wav
 from rylanflow.transcriber import DEFAULT_MODEL, MLXWhisperTranscriber
 
@@ -33,6 +35,20 @@ def transcribe(path: str, model: str) -> None:
     print(MLXWhisperTranscriber(model).transcribe(read_wav(path)))
 
 
+def listen(model: str, key: str) -> None:
+    transcriber = MLXWhisperTranscriber(model)
+    pipeline = Pipeline(Recorder(), transcriber, on_text=print)
+    ptt = PushToTalk(pipeline.start_recording, pipeline.stop_and_transcribe, key=key)
+    print(f"Loading {model}... hold [{key}] to talk, release to transcribe. Ctrl+C to quit.")
+    transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))  # warm up
+    print("Ready.")
+    ptt.start()
+    try:
+        ptt.join()
+    except KeyboardInterrupt:
+        ptt.stop()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="rylanflow")
     parser.add_argument("--version", action="version", version=f"RylanFlow {__version__}")
@@ -43,12 +59,17 @@ def main() -> None:
     tr = sub.add_parser("transcribe", help="transcribe a WAV file to text")
     tr.add_argument("file")
     tr.add_argument("-m", "--model", default=DEFAULT_MODEL)
+    ls = sub.add_parser("listen", help="hold a key to talk; print the transcript on release")
+    ls.add_argument("-m", "--model", default=DEFAULT_MODEL)
+    ls.add_argument("-k", "--key", default="alt_r", help="pynput key name (default alt_r)")
     args = parser.parse_args()
 
     if args.command == "record":
         record(args.seconds, args.output)
     elif args.command == "transcribe":
         transcribe(args.file, args.model)
+    elif args.command == "listen":
+        listen(args.model, args.key)
     else:
         print(f"RylanFlow {__version__}")
 
