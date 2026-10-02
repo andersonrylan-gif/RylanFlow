@@ -144,7 +144,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Do:** create both milestones with `gh api repos/andersonrylan-gif/RylanFlow/milestones -f title=...`.
   - **Done when:** merged, and a fresh Claude Code session in the repo loads `CLAUDE.md`.
 
-- [ ] **0.2 Stable local code signing**, so permissions survive rebuilds.
+- [x] **0.2 Stable local code signing**, so permissions survive rebuilds.
   - **Files:** `packaging/make_signing_cert.sh` (new), `packaging/build.sh`.
   - **Do:**
     - The script creates a self-signed code-signing certificate named **"RylanFlow Local Signing"** in the login keychain. Use `openssl req -x509 -newkey rsa:2048 -days 3650 -subj "/CN=RylanFlow Local Signing" -addext "extendedKeyUsage=codeSigning" -addext "keyUsage=digitalSignature"`, then `openssl pkcs12 -export` and `security import … -k ~/Library/Keychains/login.keychain-db -T /usr/bin/codesign`.
