@@ -22,7 +22,7 @@ class AudioStuckError(RuntimeError):
     """CoreAudio stopped responding; only a restart of the process recovers it."""
 
 
-def _run_with_timeout(fn, timeout: float):
+def run_with_timeout(fn, timeout: float):
     """Run fn on a helper thread. Returns its result, or raises AudioStuckError on timeout."""
     result: dict = {}
 
@@ -104,7 +104,7 @@ class Recorder:
             self._chunks = []
             self._capturing = True
         try:
-            self._stream = _run_with_timeout(self._open, OPEN_TIMEOUT)
+            self._stream = run_with_timeout(self._open, OPEN_TIMEOUT)
         except BaseException:
             with self._lock:
                 self._capturing = False
@@ -146,3 +146,29 @@ def write_wav(path: str | Path, audio: np.ndarray, sample_rate: int = SAMPLE_RAT
         f.setsampwidth(2)
         f.setframerate(sample_rate)
         f.writeframes(pcm.tobytes())
+
+
+class IncrementalWavWriter:
+    """Appends float32 audio to a 16-bit PCM WAV file as it arrives, for a capture that can run
+    for a long time (a meeting) -- unlike write_wav(), this never needs the whole recording held
+    in memory at once, and what's on disk survives a crash partway through."""
+
+    def __init__(self, path: str | Path, sample_rate: int = SAMPLE_RATE) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = wave.open(str(path), "wb")
+        self._file.setnchannels(CHANNELS)
+        self._file.setsampwidth(2)
+        self._file.setframerate(sample_rate)
+        self._closed = False
+
+    def append(self, audio: np.ndarray) -> None:
+        if audio.size == 0 or self._closed:
+            return
+        pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+        self._file.writeframes(pcm.tobytes())
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._file.close()

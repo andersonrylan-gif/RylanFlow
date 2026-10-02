@@ -317,7 +317,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** priority ordering, error callback, deadline-based hang detection with a fake clock.
   - **Done when:** all old tests and the new ones pass, and dictation still works from source.
 
-- [ ] **3.3 Meeting capture tracks.**
+- [x] **3.3 Meeting capture tracks.**
   - **Files:** `meetings/__init__.py`, `meetings/mic_track.py`, `meetings/system_audio.py`, `meetings/chunker.py`, tests for the chunker.
   - **Do:**
     - `MicTrack` is a continuous 16 kHz mono capture using the **same safe pattern as `Recorder`**: chunks are appended under a lock; `drain() -> np.ndarray` returns and clears them; `close()` is non-blocking. It opens its own `sd.InputStream` so dictation can keep working during a meeting.
