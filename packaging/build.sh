@@ -17,6 +17,7 @@ uv run pyinstaller --noconfirm --windowed --name RylanFlow \
 PLIST=packaging/dist/RylanFlow.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'RylanFlow records your voice to transcribe it on this Mac.'" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :NSScreenCaptureUsageDescription string 'RylanFlow captures system audio (what the other meeting participants say) to transcribe meetings on this Mac. No video or screen content is read.'" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.2.0" "$PLIST"
 
 SIGN_IDENTITY="-"  # ad-hoc fallback
