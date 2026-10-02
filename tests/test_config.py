@@ -18,3 +18,12 @@ def test_save_then_load_roundtrip(tmp_path):
     config = Config(hotkey="f13", model="some/model", language="en")
     save_config(config, path)
     assert load_config(path) == config
+
+
+def test_new_options_roundtrip(tmp_path):
+    path = tmp_path / "c.toml"
+    config = Config(sounds=False, remove_fillers=False)
+    save_config(config, path)
+    loaded = load_config(path)
+    assert loaded.sounds is False
+    assert loaded.remove_fillers is False

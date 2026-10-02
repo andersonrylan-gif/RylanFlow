@@ -7,6 +7,8 @@ import threading
 import pyperclip
 import rumps
 
+from rylanflow import sounds
+from rylanflow.cleanup import remove_fillers
 from rylanflow.config import Config, load_config, save_config
 from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
@@ -19,6 +21,11 @@ from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscrib
 log = logging.getLogger(__name__)
 
 ICONS = {"idle": "🎙", "recording": "🔴", "working": "⏳"}
+HOTKEYS = {
+    "Right Option": "alt_r",
+    "Right Command": "cmd_r",
+    "Right Control": "ctrl_r",
+}
 MODELS = {
     "Fast (base)": FAST_MODEL,
     "Accurate (large-v3-turbo)": DEFAULT_MODEL,
@@ -60,9 +67,27 @@ class RylanFlowApp(rumps.App):
             item.state = int(repo == self._config.model)
             model_menu.add(item)
             self._model_items[label] = item
+
+        self._hotkey_items = {}
+        hotkey_menu = rumps.MenuItem("Hotkey")
+        for label, key in HOTKEYS.items():
+            item = rumps.MenuItem(label, callback=self._pick_hotkey)
+            item.state = int(key == self._config.hotkey)
+            hotkey_menu.add(item)
+            self._hotkey_items[label] = item
+
+        self._sounds_item = rumps.MenuItem("Sound cues", callback=self._toggle_sounds)
+        self._sounds_item.state = int(self._config.sounds)
+        self._fillers_item = rumps.MenuItem("Remove um / uh", callback=self._toggle_fillers)
+        self._fillers_item.state = int(self._config.remove_fillers)
         self.menu = [
             rumps.MenuItem("Copy last transcript", callback=self._copy_last),
+            None,
             model_menu,
+            hotkey_menu,
+            self._sounds_item,
+            self._fillers_item,
+            None,
             rumps.MenuItem("Open log", callback=self._open_log),
         ]
 
@@ -89,14 +114,22 @@ class RylanFlowApp(rumps.App):
             self._notify_error("Can't open the microphone. Check Microphone permission and input.")
             return
         self._set_state("recording")
+        if self._config.sounds:
+            sounds.play("start")
 
     def _on_release(self) -> None:
         if self._state != "recording":
             return
         self._set_state("working")
+        if self._config.sounds:
+            sounds.play("stop")
         self._pipeline.stop_and_transcribe()
 
     def _on_text(self, text: str) -> None:
+        if self._config.remove_fillers:
+            text = remove_fillers(text)
+        if not text:
+            return
         self._last_transcript = text
         log.info("transcribed %d characters", len(text))
         self._inserter.insert(text)
@@ -116,6 +149,23 @@ class RylanFlowApp(rumps.App):
         self._transcriber.model = self._config.model
         for item in self._model_items.values():
             item.state = int(item is sender)
+        save_config(self._config)
+
+    def _pick_hotkey(self, sender: rumps.MenuItem) -> None:
+        self._config.hotkey = HOTKEYS[sender.title]
+        self._ptt.set_key(self._config.hotkey)
+        for item in self._hotkey_items.values():
+            item.state = int(item is sender)
+        save_config(self._config)
+
+    def _toggle_sounds(self, sender: rumps.MenuItem) -> None:
+        self._config.sounds = not self._config.sounds
+        sender.state = int(self._config.sounds)
+        save_config(self._config)
+
+    def _toggle_fillers(self, sender: rumps.MenuItem) -> None:
+        self._config.remove_fillers = not self._config.remove_fillers
+        sender.state = int(self._config.remove_fillers)
         save_config(self._config)
 
     def _copy_last(self, _) -> None:

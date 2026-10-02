@@ -40,6 +40,11 @@ class PushToTalk:
             self._held = False
             self._on_release()
 
+    def set_key(self, name: str) -> None:
+        """Change the hotkey while running."""
+        self._key = parse_key(name)
+        self._held = False
+
     def start(self) -> None:
         self._listener.start()
 

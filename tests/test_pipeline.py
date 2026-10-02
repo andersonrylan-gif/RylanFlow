@@ -77,3 +77,13 @@ def test_on_done_fires_even_for_taps_and_failures():
         pipeline.stop_and_transcribe().join()
     assert done == [1, 1]
     assert len(errors) == 1  # only the model failure is reported
+
+
+def test_push_to_talk_set_key_changes_trigger():
+    events = []
+    ptt = PushToTalk(lambda: events.append("down"), lambda: events.append("up"), key="alt_r")
+    ptt.set_key("cmd_r")
+    ptt._press(keyboard.Key.alt_r)
+    ptt._press(keyboard.Key.cmd_r)
+    ptt._release(keyboard.Key.cmd_r)
+    assert events == ["down", "up"]
