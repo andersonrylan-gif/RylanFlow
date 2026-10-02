@@ -399,7 +399,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** detector logic covering Zoom start and stop, Chrome with and without a Meet title, flapping signals, manual-stop override, own-process exclusion.
   - **Done when:** joining a Google Meet starts a transcript within about 10 s with no clicks, and leaving finishes it within about 1 minute.
 
-- [ ] **3.8 Meeting polish.**
+- [x] **3.8 Meeting polish.**
   - **Do:**
     - Export Markdown (`GET /api/meetings/<id>/export.md` with title, date, attendees, then `**Name** [mm:ss]: text`) and a "Download .md" button.
     - Meeting search (FTS over segments).
