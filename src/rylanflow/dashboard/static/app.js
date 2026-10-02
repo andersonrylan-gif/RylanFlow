@@ -25,6 +25,7 @@
       document.querySelector(".nav-item.active")?.classList.remove("active");
       item.classList.add("active");
       for (const [name, el] of Object.entries(views)) el.hidden = name !== target;
+      if (target === "settings") loadSettings();
     });
   }
 
@@ -153,6 +154,50 @@
       refreshDictations();
     }, 200);
   });
+
+  // --- settings ---
+
+  function fillSelect(select, choices, current) {
+    select.innerHTML = "";
+    for (const [label, value] of Object.entries(choices)) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      option.selected = value === current;
+      select.appendChild(option);
+    }
+  }
+
+  async function putSettings(changes) {
+    const settings = await api("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    renderSettings(settings);
+  }
+
+  function renderSettings(settings) {
+    fillSelect(document.getElementById("setting-hotkey"), settings.available_hotkeys, settings.hotkey);
+    fillSelect(document.getElementById("setting-model"), settings.available_models, settings.model);
+    for (const key of ["sounds", "remove_fillers", "start_at_login"]) {
+      document.getElementById(`setting-${key}`).classList.toggle("on", !!settings[key]);
+    }
+  }
+
+  async function loadSettings() {
+    renderSettings(await api("/api/settings"));
+  }
+
+  document.getElementById("setting-hotkey").addEventListener("change", (e) => putSettings({ hotkey: e.target.value }));
+  document.getElementById("setting-model").addEventListener("change", (e) => putSettings({ model: e.target.value }));
+  for (const key of ["sounds", "remove_fillers", "start_at_login"]) {
+    document.getElementById(`setting-${key}`).addEventListener("click", (e) => {
+      const nowOn = !e.currentTarget.classList.contains("on");
+      e.currentTarget.classList.toggle("on", nowOn); // optimistic; renderSettings confirms it
+      putSettings({ [key]: nowOn });
+    });
+  }
 
   // --- polling: keep the list fresh while the page is open, skip while mid-interaction ---
 

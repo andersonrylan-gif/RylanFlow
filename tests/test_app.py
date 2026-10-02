@@ -93,15 +93,19 @@ def test_frontmost_app_does_not_raise():
 # --- dashboard wiring ---
 
 
-def test_dashboard_server_starts_and_serves_real_settings(make_app):
+def test_dashboard_server_starts_and_serves_real_settings(make_app, monkeypatch):
+    # is_enabled() reads this machine's real LaunchAgent state, which this test doesn't own.
+    monkeypatch.setattr(app_module.autostart, "is_enabled", lambda: False)
     app, _store = make_app(hotkey="cmd_r", model="my-model")
     assert app._dashboard_url.startswith("http://127.0.0.1:")
-    assert app.get_settings() == {
-        "hotkey": "cmd_r",
-        "model": "my-model",
-        "sounds": True,
-        "remove_fillers": True,
-    }
+    settings = app.get_settings()
+    assert settings["hotkey"] == "cmd_r"
+    assert settings["model"] == "my-model"
+    assert settings["sounds"] is True
+    assert settings["remove_fillers"] is True
+    assert settings["start_at_login"] is False
+    assert settings["available_hotkeys"] == app_module.HOTKEYS
+    assert settings["available_models"] == app_module.MODELS
 
 
 def test_apply_settings_main_thread_updates_config_live_state_and_menu(make_app):
@@ -120,6 +124,22 @@ def test_apply_settings_main_thread_updates_config_live_state_and_menu(make_app)
     assert app._model_items["Fast (base)"].state == 0
     assert app._sounds_item.state == 0
     assert app._fillers_item.state == 0
+
+
+def test_apply_settings_main_thread_toggles_start_at_login(make_app, monkeypatch):
+    # Must never touch the real LaunchAgent/launchctl state of the machine running the tests.
+    enabled, disabled = [], []
+    monkeypatch.setattr(app_module.autostart, "enable", lambda: enabled.append(1))
+    monkeypatch.setattr(app_module.autostart, "disable", lambda: disabled.append(1))
+    app, _store = make_app()
+
+    app._apply_settings_main_thread({"start_at_login": True})
+    assert enabled == [1]
+    assert disabled == []
+
+    app._apply_settings_main_thread({"start_at_login": False})
+    assert enabled == [1]
+    assert disabled == [1]
 
 
 def test_apply_settings_main_thread_ignores_unknown_values(make_app):

@@ -216,7 +216,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
       - If the WebKit import fails, fall back to `webbrowser.open(url)`.
   - **Done when:** run from source, choose Open Dashboard, and a native window shows the dictations. Close it and reopen it, and it works again.
 
-- [ ] **1.4 Settings page.**
+- [x] **1.4 Settings page.**
   - **Files:** `static/*`, `app.py`, `config.py`.
   - **Do:**
     - Settings UI controls: Hotkey (Right Option, Command or Control), Model (Fast or Accurate), Sound cues, Remove um/uh, Pop-up position (Bottom, Top or Off; added in 2.2), Start at login (calls `autostart.enable/disable`).
