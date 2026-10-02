@@ -370,7 +370,9 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** `assign` cases (single speaker, two alternating, segment spanning two turns, no turns); session post-processing with a fake diarizer.
   - **Done when:** after a two-person YouTube interview, the transcript shows Speaker 1 and Speaker 2 mostly correctly. Report the observed quality honestly in the PR.
 
-- [ ] **3.6 Names from the calendar and renaming.**
+- [ ] **3.6 Names from the calendar and renaming.** (partial: calendar-suggested titles/attendees
+  done; the dashboard rename-UI is deferred until diarization -- 3.5, blocked -- gives there
+  more than "You"/"Others" to rename)
   - **Files:** `meetings/calendar.py`, `session.py`, `dashboard/server.py`, static files, `packaging/build.sh` (plist `NSCalendarsFullAccessUsageDescription`); `uv add pyobjc-framework-EventKit`.
   - **Do:**
     - `CalendarLookup.current_event(at: datetime) -> Event(title, id, attendees: list[str], url)` uses `EKEventStore`:

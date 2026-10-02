@@ -12,8 +12,10 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 
 from rylanflow.meetings import speakers
+from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.chunker import Chunker
 from rylanflow.meetings.mic_track import MicTrack
 from rylanflow.meetings.system_audio import SystemAudioTrack
@@ -40,10 +42,12 @@ class MeetingSession:
         mic_track_factory: Callable[[object], MicTrack] = MicTrack,
         system_track_factory: Callable[[object], SystemAudioTrack] = SystemAudioTrack,
         clock=time.monotonic,
+        calendar_lookup: CalendarLookup | None = None,
     ) -> None:
         """Factories let tests substitute fake tracks; in production they default to the real
         MicTrack/SystemAudioTrack, each constructed fresh per meeting with that meeting's own
-        WAV path (data_dir()/meetings/<id>/{mic,system}.wav)."""
+        WAV path (data_dir()/meetings/<id>/{mic,system}.wav). `calendar_lookup` is optional --
+        None (the default, and what tests use) skips the calendar-title lookup entirely."""
         self._store = store
         self._service = service
         self._transcriber = transcriber
@@ -51,6 +55,7 @@ class MeetingSession:
         self._mic_track_factory = mic_track_factory
         self._system_track_factory = system_track_factory
         self._clock = clock
+        self._calendar_lookup = calendar_lookup
 
         self._meeting_id: int | None = None
         self._you_id: int | None = None
@@ -121,6 +126,7 @@ class MeetingSession:
     # --- background: starting ---
 
     def _start_tracks_and_pump(self) -> None:
+        meeting_id = self._meeting_id
         try:
             self._mic.start()
             self._system.start()
@@ -136,6 +142,25 @@ class MeetingSession:
         )
         self._pump_thread.start()
         self._started_event.set()
+        self._apply_calendar_info(meeting_id)
+
+    def _apply_calendar_info(self, meeting_id: int) -> None:
+        """Best-effort: suggest a title and attendee list from the calendar event covering
+        right now, if any. Runs after _started_event is set, so it never delays stop() --
+        a late title update (or none, on failure) is fine either way."""
+        if self._calendar_lookup is None:
+            return
+        try:
+            event = self._calendar_lookup.current_event(datetime.now().astimezone())
+        except Exception:
+            log.exception("calendar lookup failed")
+            return
+        if event is None:
+            return
+        if event.title:
+            self._store.set_meeting_title(meeting_id, event.title)
+        if event.attendees:
+            self._store.set_meeting_attendees(meeting_id, event.attendees)
 
     def _pump_loop(self) -> None:
         # Captured once: stop() clears self._meeting_id (for the `active` property) separately

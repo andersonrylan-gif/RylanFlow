@@ -169,6 +169,12 @@ def test_set_meeting_title(store):
     assert store.get_meeting(mid)["title"] == "Renamed"
 
 
+def test_set_meeting_attendees(store):
+    mid = store.create_meeting(title="Standup")
+    store.set_meeting_attendees(mid, ["Sarah", "John"])
+    assert store.get_meeting(mid)["attendees"] == ["Sarah", "John"]
+
+
 def test_list_meetings_newest_first(store, clock):
     store.create_meeting(title="first")
     clock.now += timedelta(minutes=5)
