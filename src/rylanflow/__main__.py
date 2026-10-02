@@ -67,6 +67,8 @@ def main() -> None:
     ls.add_argument("-k", "--key", default="alt_r", help="pynput key name (default alt_r)")
     ls.add_argument("--paste", action="store_true", help="paste into the focused app")
     sub.add_parser("app", help="run the menu-bar app")
+    auto = sub.add_parser("autostart", help="start the menu-bar app at login")
+    auto.add_argument("action", choices=["on", "off", "status"])
     args = parser.parse_args()
 
     if args.command == "record":
@@ -79,6 +81,20 @@ def main() -> None:
         from rylanflow.app import main as run_app  # imports AppKit, keep it lazy
 
         run_app()
+    elif args.command == "autostart":
+        from rylanflow import autostart
+
+        if args.action == "on":
+            print(autostart.enable())
+            print("\nGrant Accessibility and Input Monitoring to this program in System Settings:")
+            print(f"  {autostart.real_python()}")
+            print(
+                "(+ button, then Cmd+Shift+G to paste the path), then run: rylanflow autostart on"
+            )
+        elif args.action == "off":
+            print(autostart.disable())
+        else:
+            print(autostart.status())
     else:
         print(f"RylanFlow {__version__}")
 
