@@ -3,6 +3,7 @@
 import logging
 import subprocess
 import threading
+import time
 
 import pyperclip
 import rumps
@@ -16,6 +17,9 @@ from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
 from rylanflow.instance import acquire
 from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
+from rylanflow.meeting_indicator import MeetingIndicator
+from rylanflow.meetings import detector
+from rylanflow.meetings.detector_logic import MeetingDetector, Start, Stop
 from rylanflow.meetings.session import MeetingSession
 from rylanflow.overlay import Overlay
 from rylanflow.pipeline import Pipeline
@@ -26,6 +30,7 @@ from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscrib
 from rylanflow.transcription_service import TranscriptionService
 
 APPLY_SETTINGS_TIMEOUT = 5.0  # seconds the dashboard's HTTP thread waits for the main thread
+DETECTOR_POLL_INTERVAL = 2.0  # seconds between auto-record probes
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +112,8 @@ class RylanFlowApp(rumps.App):
             self._store, self._transcription_service, self._transcriber, my_display_name()
         )
         self._meeting_was_active = False
+        self._meeting_detector = MeetingDetector()
+        self._meeting_indicator = MeetingIndicator()
 
         self._overlay = Overlay(position=self._config.overlay)
         self._overlay.set_sources(lambda: self._pipeline.state, lambda: self._recorder.level)
@@ -194,6 +201,10 @@ class RylanFlowApp(rumps.App):
             self._meeting_item.title = (
                 "Stop meeting recording" if meeting_active else "Start meeting recording"
             )
+            if meeting_active:
+                self._meeting_indicator.start()
+            else:
+                self._meeting_indicator.stop()
         self._pipeline.tick()
         if self._config.overlay != "off" and self._pipeline.state != "idle":
             self._overlay.ensure_running()  # cheap no-op once it's already running
@@ -250,6 +261,11 @@ class RylanFlowApp(rumps.App):
                 self._overlay.stop()  # hide immediately, don't wait for the current fade
             else:
                 self._overlay.set_position(overlay)
+        if "auto_record_meetings" in changes:
+            self._config.auto_record_meetings = bool(changes["auto_record_meetings"])
+            # Fresh debounce state either way, so a stale timer from before the toggle can't
+            # cause an instant start/stop the moment it's flipped back on.
+            self._meeting_detector = MeetingDetector()
         save_config(self._config)
         return self.get_settings()
 
@@ -263,6 +279,7 @@ class RylanFlowApp(rumps.App):
             "remove_fillers": self._config.remove_fillers,
             "start_at_login": autostart.is_enabled(),
             "overlay": self._config.overlay,
+            "auto_record_meetings": self._config.auto_record_meetings,
             # So the dashboard's Settings page never hardcodes these choices itself.
             "available_hotkeys": HOTKEYS,
             "available_models": MODELS,
@@ -282,18 +299,47 @@ class RylanFlowApp(rumps.App):
         if not done.wait(APPLY_SETTINGS_TIMEOUT):
             log.warning("applying settings from the dashboard timed out")
 
-    def start_meeting(self) -> int:
+    def start_meeting(self, source_app: str | None = None) -> int:
         """Starts a meeting (a no-op returning the same id if one is already active). Safe to
         call from any thread -- MeetingSession.start() itself is, and _render picks up the menu
-        label and icon change on its own without needing to hop to the main thread here."""
+        label, icon and indicator changes on its own without needing to hop to the main thread
+        here. `source_app` lets the auto-record detector report the app it actually saw."""
         meeting_id = self._meeting_session.start(
-            source_app=frontmost_app(), on_error=self._notify_error
+            source_app=source_app or frontmost_app(), on_error=self._notify_error
         )
+        self._meeting_detector.note_external_start()
         self._notify("Recording meeting — open RylanFlow to stop.")
         return meeting_id
 
     def stop_meeting(self) -> int | None:
+        self._meeting_detector.note_external_stop()
         return self._meeting_session.stop()
+
+    # --- auto-record: a background thread probes for "looks like a meeting" every 2s and
+    # applies the (debounced) decision on the main thread ---
+
+    def _meeting_detector_loop(self) -> None:
+        while True:
+            time.sleep(DETECTOR_POLL_INTERVAL)
+            if not self._config.auto_record_meetings:
+                continue
+            try:
+                signals = detector.probe()
+                decision = self._meeting_detector.update(signals)
+            except Exception:
+                log.exception("meeting detector probe failed")
+                continue
+            if isinstance(decision, Start):
+                AppHelper.callAfter(lambda app_name=decision.app_name: self._auto_start(app_name))
+            elif isinstance(decision, Stop):
+                AppHelper.callAfter(self._auto_stop)
+
+    def _auto_start(self, app_name: str) -> None:
+        self._meeting_session.start(source_app=app_name, on_error=self._notify_error)
+        self._notify(f"Transcribing your {app_name} meeting.")
+
+    def _auto_stop(self) -> None:
+        self._meeting_session.stop()
 
     def _open_dashboard(self, _) -> None:
         try:
@@ -324,6 +370,9 @@ class RylanFlowApp(rumps.App):
                 "Grant Accessibility and Input Monitoring in System Settings, then restart."
             )
         self._ptt.start()
+        threading.Thread(
+            target=self._meeting_detector_loop, name="meeting-detector", daemon=True
+        ).start()
         if not self._config.dashboard_seen:
             self._config.dashboard_seen = True
             save_config(self._config)

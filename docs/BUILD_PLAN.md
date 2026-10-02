@@ -383,7 +383,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** URL and attendee parsing (pure helpers) with fake event objects; speaker rename API.
   - **Done when:** a test calendar event with attendees gives the meeting its title, and renaming "Speaker 1" to a person updates the whole transcript.
 
-- [ ] **3.7 Auto-record.**
+- [x] **3.7 Auto-record.**
   - **Files:** `meetings/detector.py`, `meetings/detector_logic.py`, `app.py`, `config.py` (`auto_record_meetings: bool = True`), tests.
   - **Do:**
     - `detector.probe() -> Signals(mic_users: set[str], window_titles: list[tuple[owner, title]], now)` uses the 3.1 code. Our own bundle ID and Python PID are excluded.
