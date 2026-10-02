@@ -17,10 +17,12 @@ class Pipeline:
         recorder: Recorder,
         transcriber: Transcriber,
         on_text: Callable[[str], None],
+        on_done: Callable[[], None] | None = None,
     ) -> None:
         self._recorder = recorder
         self._transcriber = transcriber
         self._on_text = on_text
+        self._on_done = on_done
         self._lock = threading.Lock()  # one transcription at a time
 
     def start_recording(self) -> None:
@@ -34,9 +36,13 @@ class Pipeline:
         return thread
 
     def _work(self, audio: np.ndarray) -> None:
-        if audio.size < MIN_SECONDS * SAMPLE_RATE:
-            return
-        with self._lock:
-            text = self._transcriber.transcribe(audio)
-        if text:
-            self._on_text(text)
+        try:
+            if audio.size < MIN_SECONDS * SAMPLE_RATE:
+                return
+            with self._lock:
+                text = self._transcriber.transcribe(audio)
+            if text:
+                self._on_text(text)
+        finally:
+            if self._on_done:
+                self._on_done()
