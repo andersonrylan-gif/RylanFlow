@@ -1,5 +1,7 @@
 # RylanFlow
 
+[![CI](https://github.com/andersonrylan-gif/RylanFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/andersonrylan-gif/RylanFlow/actions/workflows/ci.yml)
+
 **Hold a key, talk, release — your words appear wherever you're typing.**
 On-device dictation for macOS, powered by Whisper running locally on Apple Silicon. No cloud, no subscription, works offline.
 
