@@ -296,7 +296,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Done when:** `system.wav` plays back the video's audio clearly, and the transcriber can transcribe it (`uv run rylanflow transcribe system.wav`).
   - **Fallback if blocked after about 2 hours:** use the macOS 14.4+ Core Audio process tap (`AudioHardwareCreateProcessTap` with a `CATapDescription` of global mono, excluding our PID, via PyObjC CoreAudio or ctypes), or, last resort, document a BlackHole + Multi-Output setup. Write the decision into ADR 0003 either way.
 
-- [ ] **3.1 Spike: which app is using the mic.**
+- [x] **3.1 Spike: which app is using the mic.**
   - **Files:** `scripts/spike_mic_users.py`, an appendix in ADR 0003.
   - **Do:** using ctypes on `/System/Library/Frameworks/CoreAudio.framework/CoreAudio`, list audio "process objects":
     - `AudioObjectGetPropertyDataSize` / `AudioObjectGetPropertyData` on `kAudioObjectSystemObject` (1) with selector `'prs#'` (kAudioHardwarePropertyProcessObjectList), scope `'glob'`, element 0 → `UInt32[]` object IDs.
