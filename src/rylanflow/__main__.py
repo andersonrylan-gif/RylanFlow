@@ -41,7 +41,7 @@ def listen(model: str, key: str, paste: bool) -> None:
     pipeline = Pipeline(
         Recorder(), transcriber, on_text=ClipboardInserter().insert if paste else print
     )
-    ptt = PushToTalk(pipeline.start_recording, pipeline.stop_and_transcribe, key=key)
+    ptt = PushToTalk(pipeline.press, pipeline.release, key=key)
     print(f"Loading {model}... hold [{key}] to talk, release to transcribe. Ctrl+C to quit.")
     transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))  # warm up
     print("Ready.")
