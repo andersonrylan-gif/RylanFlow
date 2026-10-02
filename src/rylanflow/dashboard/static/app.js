@@ -382,6 +382,19 @@
     await api("/api/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
   });
 
+  document.getElementById("meeting-download").addEventListener("click", async () => {
+    const res = await fetch(`/api/meetings/${currentMeetingId}/export.md`, {
+      headers: { "X-RylanFlow-Token": TOKEN },
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `meeting-${currentMeetingId}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
   // --- polling: keep the list fresh while the page is open, skip while mid-interaction ---
 
   async function poll() {

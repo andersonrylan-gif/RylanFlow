@@ -224,6 +224,36 @@ def test_search_meetings(server):
     assert data[0]["title"] == "Planning"
 
 
+def test_export_meeting_markdown(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    you_id = store.add_speaker(meeting_id, "You", display_name="Rylan", is_me=True)
+    store.add_segments(
+        meeting_id,
+        [{"speaker_id": you_id, "track": "mic", "start_s": 0, "end_s": 1, "text": "hello"}],
+    )
+    status, body = _request(
+        f"{_base(url)}api/meetings/{meeting_id}/export.md", token=srv.token, parse_json=False
+    )
+    assert status == 200
+    text = body.decode("utf-8")
+    assert text.startswith("# Standup\n")
+    assert "**Rylan** [0:00]: hello" in text
+
+
+def test_export_nonexistent_meeting_returns_404(server):
+    srv, _store, _actions, url = server
+    code = _request_expect_error(f"{_base(url)}api/meetings/999/export.md", token=srv.token)
+    assert code == 404
+
+
+def test_export_meeting_requires_token(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    code = _request_expect_error(f"{_base(url)}api/meetings/{meeting_id}/export.md", token=None)
+    assert code == 403
+
+
 def test_get_meeting_includes_speakers_and_segments(server):
     srv, store, _actions, url = server
     meeting_id = store.create_meeting(title="Standup")
