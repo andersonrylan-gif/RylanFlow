@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run RylanFlow",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "rylanflow",
+      "console": "integratedTerminal"
+    }
+  ]
+}
