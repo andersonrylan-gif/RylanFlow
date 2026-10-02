@@ -190,7 +190,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** start the server on a temp store, hit it with `urllib.request`, and check auth failures (403 without token, wrong Host), list, search, delete, copy (monkeypatch pyperclip) and settings round-trip.
   - **Done when:** tests pass.
 
-- [ ] **1.2 Dashboard UI: Dictations page.**
+- [x] **1.2 Dashboard UI: Dictations page.**
   - **Files:** `dashboard/static/index.html`, `app.js`, `style.css`.
   - **Do:**
     - Vanilla JS, no build step, no CDN (it works offline). Read the token from `location.search` and send it on every fetch.

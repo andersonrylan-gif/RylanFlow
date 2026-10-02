@@ -1,18 +1,20 @@
-
 # Python-generated files
-# Virtual environments
-# macOS / tooling
-*.egg-info
-*.py[oc]
-*.wav
-.DS_Store
-.pytest_cache/
-.ruff_cache/
-.venv
 __pycache__/
+*.py[oc]
+*.egg-info
 build/
 dist/
+wheels/
+
+# Virtual environments
+.venv
+
+# macOS / tooling
+.DS_Store
+*.wav
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
+packaging/*.spec
 packaging/build/
 packaging/dist/
-wheels/
-packaging/*.spec

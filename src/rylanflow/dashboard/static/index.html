@@ -2,14 +2,42 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RylanFlow</title>
-<style>
-  body { font: 15px -apple-system, BlinkMacSystemFont, sans-serif; margin: 3rem; color: #333; }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<p>RylanFlow dashboard — the real UI lands in a follow-up step (docs/BUILD_PLAN.md, 1.2).</p>
-<p>The API is live: this page can call <code>/api/dictations</code>, <code>/api/stats</code>
-and <code>/api/settings</code> with the token from its own URL.</p>
+<div class="app">
+  <nav class="sidebar">
+    <div class="brand"><span class="dot"></span>RylanFlow</div>
+    <div class="nav-item active" data-view="home">Home</div>
+    <div class="nav-item" data-view="meetings" hidden>Meetings</div>
+    <div class="nav-item" data-view="settings">Settings</div>
+  </nav>
+
+  <main>
+    <section id="view-home">
+      <h1>Dictations</h1>
+
+      <div class="stats" id="stats">
+        <div class="stat"><div class="value" id="stat-today">—</div><div class="label">Words today</div></div>
+        <div class="stat"><div class="value" id="stat-week">—</div><div class="label">Words this week</div></div>
+        <div class="stat"><div class="value" id="stat-total">—</div><div class="label">Dictations</div></div>
+        <div class="stat"><div class="value" id="stat-saved">—</div><div class="label">Minutes saved</div></div>
+      </div>
+
+      <input class="search" id="search" type="search" placeholder="Search your dictations…">
+
+      <div id="list"></div>
+    </section>
+
+    <section id="view-settings" hidden>
+      <h1>Settings</h1>
+      <p class="empty">Settings are on the way — for now, use the RylanFlow menu-bar icon.</p>
+    </section>
+  </main>
+</div>
+
+<script src="/static/app.js"></script>
 </body>
 </html>
