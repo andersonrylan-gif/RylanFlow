@@ -9,9 +9,11 @@ from rylanflow.store import Store
 
 
 class FakeActions:
-    def __init__(self):
+    def __init__(self, store=None):
         self.settings = {"hotkey": "alt_r", "model": "base"}
         self.applied = []
+        self._store = store
+        self._active_meeting_id: int | None = None
 
     def get_settings(self):
         return dict(self.settings)
@@ -20,11 +22,24 @@ class FakeActions:
         self.applied.append(changes)
         self.settings.update(changes)
 
+    def start_meeting(self):
+        if self._active_meeting_id is not None:
+            return self._active_meeting_id
+        self._active_meeting_id = self._store.create_meeting()
+        return self._active_meeting_id
+
+    def stop_meeting(self):
+        meeting_id = self._active_meeting_id
+        if meeting_id is not None:
+            self._store.finish_meeting(meeting_id, "done")
+            self._active_meeting_id = None
+        return meeting_id
+
 
 @pytest.fixture
 def server(tmp_path):
     store = Store(tmp_path / "test.db")
-    actions = FakeActions()
+    actions = FakeActions(store)
     srv = DashboardServer(store, actions)
     url = srv.start()
     yield srv, store, actions, url
@@ -188,6 +203,91 @@ def test_put_settings_applies_changes_and_returns_the_result(server):
     assert status == 200
     assert data["hotkey"] == "cmd_r"
     assert actions.applied == [{"hotkey": "cmd_r"}]
+
+
+def test_list_meetings(server):
+    srv, store, _actions, url = server
+    store.create_meeting(title="Standup")
+    status, data = _request(f"{_base(url)}api/meetings", token=srv.token)
+    assert status == 200
+    assert len(data) == 1
+    assert data[0]["title"] == "Standup"
+
+
+def test_get_meeting_includes_speakers_and_segments(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    you_id = store.add_speaker(meeting_id, "You", is_me=True)
+    store.add_segments(
+        meeting_id,
+        [{"speaker_id": you_id, "track": "mic", "start_s": 0, "end_s": 1, "text": "hello"}],
+    )
+    status, data = _request(f"{_base(url)}api/meetings/{meeting_id}", token=srv.token)
+    assert status == 200
+    assert data["title"] == "Standup"
+    assert len(data["speakers"]) == 1
+    assert len(data["segments"]) == 1
+
+
+def test_get_nonexistent_meeting_returns_404(server):
+    srv, _store, _actions, url = server
+    code = _request_expect_error(f"{_base(url)}api/meetings/999", token=srv.token)
+    assert code == 404
+
+
+def test_delete_meeting(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting()
+    status, data = _request(
+        f"{_base(url)}api/meetings/{meeting_id}", token=srv.token, method="DELETE"
+    )
+    assert status == 200
+    assert data == {"ok": True}
+    assert store.get_meeting(meeting_id) is None
+
+
+def test_delete_nonexistent_meeting_returns_404(server):
+    srv, _store, _actions, url = server
+    code = _request_expect_error(f"{_base(url)}api/meetings/999", token=srv.token, method="DELETE")
+    assert code == 404
+
+
+def test_start_meeting_creates_one_and_returns_it(server):
+    srv, _store, actions, url = server
+    status, data = _request(f"{_base(url)}api/meetings/start", token=srv.token, method="POST")
+    assert status == 200
+    assert data["status"] == "recording"
+    assert actions._active_meeting_id == data["id"]
+
+
+def test_stop_meeting_marks_it_done(server):
+    srv, store, actions, url = server
+    _request(f"{_base(url)}api/meetings/start", token=srv.token, method="POST")
+    status, data = _request(f"{_base(url)}api/meetings/stop", token=srv.token, method="POST")
+    assert status == 200
+    assert data["status"] == "done"
+    assert actions._active_meeting_id is None
+
+
+def test_stop_meeting_with_none_active_returns_ok(server):
+    srv, _store, _actions, url = server
+    status, data = _request(f"{_base(url)}api/meetings/stop", token=srv.token, method="POST")
+    assert status == 200
+    assert data == {"ok": True}
+
+
+def test_meetings_routes_require_token(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting()
+    assert _request_expect_error(f"{_base(url)}api/meetings", token=None) == 403
+    assert _request_expect_error(f"{_base(url)}api/meetings/{meeting_id}", token=None) == 403
+    assert (
+        _request_expect_error(f"{_base(url)}api/meetings/{meeting_id}", token=None, method="DELETE")
+        == 403
+    )
+    assert (
+        _request_expect_error(f"{_base(url)}api/meetings/start", token=None, method="POST") == 403
+    )
 
 
 def test_unknown_api_route_is_404(server):

@@ -246,10 +246,12 @@ class Store:
             ]
             return meeting
 
-    def delete_meeting(self, meeting_id: int) -> None:
+    def delete_meeting(self, meeting_id: int) -> bool:
+        """Returns whether a row actually existed to delete."""
         with self._lock:
-            self._conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
+            cur = self._conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
             self._conn.commit()
+            return cur.rowcount > 0
 
     # --- speakers & segments ---
 

@@ -327,7 +327,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** the chunker with synthetic audio (sine bursts plus silence gaps): cut points fall in silence, offsets add up, `flush` behaves.
   - **Done when:** tests pass, and a manual script records 60 s of both tracks to WAVs.
 
-- [ ] **3.4 Live meeting session, manual start and stop.**
+- [x] **3.4 Live meeting session, manual start and stop.**
   - **Files:** `meetings/session.py`, `meetings/speakers.py`, `app.py`, `store.py` (if needed), tests.
   - **Do:**
     - `MeetingSession(store, service, tracks, clock)`:

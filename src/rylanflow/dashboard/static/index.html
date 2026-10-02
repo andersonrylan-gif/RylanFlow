@@ -11,7 +11,7 @@
   <nav class="sidebar">
     <div class="brand"><span class="dot"></span>RylanFlow</div>
     <div class="nav-item active" data-view="home">Home</div>
-    <div class="nav-item" data-view="meetings" hidden>Meetings</div>
+    <div class="nav-item" data-view="meetings">Meetings</div>
     <div class="nav-item" data-view="settings">Settings</div>
   </nav>
 
@@ -29,6 +29,26 @@
       <input class="search" id="search" type="search" placeholder="Search your dictations…">
 
       <div id="list"></div>
+    </section>
+
+    <section id="view-meetings" hidden>
+      <div id="meetings-list-view">
+        <div class="meetings-header">
+          <h1>Meetings</h1>
+          <button class="btn primary" id="meeting-toggle">Start meeting recording</button>
+        </div>
+        <div id="meetings-list"></div>
+      </div>
+
+      <div id="meeting-detail-view" hidden>
+        <button class="btn back" id="meeting-back">← Back to meetings</button>
+        <div class="meeting-detail-header">
+          <h1 id="meeting-detail-title"></h1>
+          <div class="meeting-detail-meta" id="meeting-detail-meta"></div>
+          <button class="btn" id="meeting-copy-transcript">Copy transcript</button>
+        </div>
+        <div id="meeting-transcript"></div>
+      </div>
     </section>
 
     <section id="view-settings" hidden>

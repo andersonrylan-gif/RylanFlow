@@ -17,7 +17,11 @@
 
   // --- navigation ---
 
-  const views = { home: document.getElementById("view-home"), settings: document.getElementById("view-settings") };
+  const views = {
+    home: document.getElementById("view-home"),
+    meetings: document.getElementById("view-meetings"),
+    settings: document.getElementById("view-settings"),
+  };
   for (const item of document.querySelectorAll(".nav-item")) {
     item.addEventListener("click", () => {
       const target = item.dataset.view;
@@ -26,6 +30,10 @@
       item.classList.add("active");
       for (const [name, el] of Object.entries(views)) el.hidden = name !== target;
       if (target === "settings") loadSettings();
+      if (target === "meetings") {
+        showMeetingsList();
+        refreshMeetingsList();
+      }
     });
   }
 
@@ -201,12 +209,177 @@
     });
   }
 
+  // --- meetings ---
+
+  const SPEAKER_COLORS = ["#007aff", "#ff9500", "#34c759", "#af52de", "#ff3b30", "#5ac8fa"];
+  const STATUS_LABELS = { recording: "Recording", processing: "Processing speakers…", done: "Done", failed: "Failed" };
+
+  const meetingsListView = document.getElementById("meetings-list-view");
+  const meetingDetailView = document.getElementById("meeting-detail-view");
+  const meetingsList = document.getElementById("meetings-list");
+  const meetingToggle = document.getElementById("meeting-toggle");
+  let meetingsCache = [];
+  let currentMeetingId = null; // set while the detail view is open
+  const meetingConfirming = new Set();
+
+  function showMeetingsList() {
+    currentMeetingId = null;
+    meetingsListView.hidden = false;
+    meetingDetailView.hidden = true;
+  }
+
+  function mmss(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  function meetingDuration(meeting) {
+    if (meeting.status === "recording") return "Recording…";
+    if (!meeting.ended_at) return "—";
+    const seconds = (new Date(meeting.ended_at) - new Date(meeting.started_at)) / 1000;
+    return mmss(seconds);
+  }
+
+  function renderMeetingsList(rows) {
+    meetingsCache = rows;
+    const anyActive = rows.some((m) => m.status === "recording");
+    meetingToggle.textContent = anyActive ? "Stop meeting recording" : "Start meeting recording";
+    meetingToggle.classList.toggle("danger-solid", anyActive);
+
+    if (rows.length === 0) {
+      meetingsList.innerHTML = `<div class="empty">No meetings yet — start one from here or the menu bar.</div>`;
+      return;
+    }
+    let html = "";
+    for (const m of rows) {
+      const isConfirming = meetingConfirming.has(m.id);
+      html += `
+        <div class="card meeting-card" data-id="${m.id}">
+          <div class="meeting-card-main" data-action="open">
+            <div class="card-top">
+              <span class="chip ${m.status}">${STATUS_LABELS[m.status] || m.status}</span>
+              <span>${new Date(m.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</span>
+              <span>${meetingDuration(m)}</span>
+            </div>
+            <div class="card-text" style="-webkit-line-clamp: 1;">${escapeHtml(m.title || `Meeting with ${m.source_app || "unknown app"}`)}</div>
+          </div>
+          <div class="card-actions">
+            ${
+              isConfirming
+                ? `<span>Delete this?</span>
+                   <button class="btn confirm" data-action="confirm-delete-meeting">Delete</button>
+                   <button class="btn" data-action="cancel-delete-meeting">Cancel</button>`
+                : `<button class="btn danger" data-action="delete-meeting">Delete</button>`
+            }
+          </div>
+        </div>`;
+    }
+    meetingsList.innerHTML = html;
+  }
+
+  async function refreshMeetingsList() {
+    renderMeetingsList(await api("/api/meetings"));
+  }
+
+  meetingsList.addEventListener("click", async (e) => {
+    const card = e.target.closest(".meeting-card");
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    const action = e.target.dataset.action;
+
+    if (action === "open") {
+      showMeetingDetail(id);
+    } else if (action === "delete-meeting") {
+      meetingConfirming.add(id);
+      renderMeetingsList(meetingsCache);
+    } else if (action === "cancel-delete-meeting") {
+      meetingConfirming.delete(id);
+      renderMeetingsList(meetingsCache);
+    } else if (action === "confirm-delete-meeting") {
+      meetingConfirming.delete(id);
+      await api(`/api/meetings/${id}`, { method: "DELETE" });
+      refreshMeetingsList();
+    }
+  });
+
+  meetingToggle.addEventListener("click", async () => {
+    const anyActive = meetingsCache.some((m) => m.status === "recording");
+    await api(`/api/meetings/${anyActive ? "stop" : "start"}`, { method: "POST" });
+    refreshMeetingsList();
+  });
+
+  function speakerColor(speakerId, speakers) {
+    const index = speakers.filter((s) => !s.is_me).findIndex((s) => s.id === speakerId);
+    const speaker = speakers.find((s) => s.id === speakerId);
+    if (speaker && speaker.is_me) return SPEAKER_COLORS[0];
+    return SPEAKER_COLORS[1 + (index % (SPEAKER_COLORS.length - 1))];
+  }
+
+  function renderMeetingDetail(meeting) {
+    document.getElementById("meeting-detail-title").textContent =
+      meeting.title || `Meeting with ${meeting.source_app || "unknown app"}`;
+    document.getElementById("meeting-detail-meta").textContent =
+      `${new Date(meeting.started_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · ${STATUS_LABELS[meeting.status] || meeting.status}`;
+
+    const transcript = document.getElementById("meeting-transcript");
+    if (meeting.segments.length === 0) {
+      transcript.innerHTML = `<div class="empty">${meeting.status === "recording" ? "Listening…" : "No speech was captured."}</div>`;
+      return;
+    }
+    const bySpeaker = Object.fromEntries(meeting.speakers.map((s) => [s.id, s]));
+    const wasAtBottom = transcript.scrollTop + transcript.clientHeight >= transcript.scrollHeight - 40;
+    transcript.innerHTML = meeting.segments
+      .map((seg) => {
+        const speaker = bySpeaker[seg.speaker_id];
+        const label = speaker ? speaker.display_name || speaker.label : "Unknown";
+        const color = seg.speaker_id ? speakerColor(seg.speaker_id, meeting.speakers) : "#8e8e93";
+        return `
+          <div class="transcript-line">
+            <span class="transcript-speaker" style="color:${color}">${escapeHtml(label)}</span>
+            <span class="transcript-time">${mmss(seg.start_s)}</span>
+            <div class="transcript-text">${escapeHtml(seg.text)}</div>
+          </div>`;
+      })
+      .join("");
+    if (meeting.status === "recording" && wasAtBottom) transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  async function showMeetingDetail(id) {
+    currentMeetingId = id;
+    meetingsListView.hidden = true;
+    meetingDetailView.hidden = false;
+    renderMeetingDetail(await api(`/api/meetings/${id}`));
+  }
+
+  document.getElementById("meeting-back").addEventListener("click", showMeetingsList);
+
+  document.getElementById("meeting-copy-transcript").addEventListener("click", async () => {
+    const meeting = await api(`/api/meetings/${currentMeetingId}`);
+    const bySpeaker = Object.fromEntries(meeting.speakers.map((s) => [s.id, s]));
+    const text = meeting.segments
+      .map((seg) => {
+        const speaker = bySpeaker[seg.speaker_id];
+        const label = speaker ? speaker.display_name || speaker.label : "Unknown";
+        return `[${mmss(seg.start_s)}] ${label}: ${seg.text}`;
+      })
+      .join("\n");
+    await api("/api/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+  });
+
   // --- polling: keep the list fresh while the page is open, skip while mid-interaction ---
 
   async function poll() {
-    if (document.visibilityState === "visible" && confirming.size === 0) {
-      await Promise.all([refreshDictations(), refreshStats()]).catch(() => {});
+    if (document.visibilityState !== "visible") return;
+    const tasks = [];
+    if (confirming.size === 0) tasks.push(refreshDictations(), refreshStats());
+    if (!views.meetings.hidden) {
+      tasks.push(
+        currentMeetingId === null
+          ? refreshMeetingsList()
+          : showMeetingDetail(currentMeetingId)
+      );
     }
+    await Promise.all(tasks).catch(() => {});
   }
 
   refreshDictations();

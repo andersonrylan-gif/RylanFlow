@@ -16,18 +16,21 @@ from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
 from rylanflow.instance import acquire
 from rylanflow.logs import LOG_PATH, dump_threads, setup_logging
+from rylanflow.meetings.session import MeetingSession
 from rylanflow.overlay import Overlay
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
 from rylanflow.store import Store
 from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
+from rylanflow.transcription_service import TranscriptionService
 
 APPLY_SETTINGS_TIMEOUT = 5.0  # seconds the dashboard's HTTP thread waits for the main thread
 
 log = logging.getLogger(__name__)
 
 ICONS = {"idle": "🎙", "recording": "🔴", "working": "⏳"}
+MEETING_ICON = " 📹"
 HOTKEYS = {
     "Right Option": "alt_r",
     "Right Command": "cmd_r",
@@ -65,6 +68,16 @@ def frontmost_app() -> str | None:
         return None
 
 
+def my_display_name() -> str:
+    """The name shown for the "You" speaker in meeting transcripts, best-effort."""
+    try:
+        from AppKit import NSFullUserName
+
+        return str(NSFullUserName()) or "You"
+    except Exception:
+        return "You"
+
+
 class RylanFlowApp(rumps.App):
     def __init__(self, config: Config | None = None, store: Store | None = None) -> None:
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
@@ -74,17 +87,26 @@ class RylanFlowApp(rumps.App):
         self._transcriber = MLXWhisperTranscriber(self._config.model, self._config.language)
         self._inserter = ClipboardInserter()
         self._recorder = Recorder()
+        # Shared so dictation and meeting transcription run on one Whisper worker, with
+        # dictation always jumping the queue ahead of meeting chunks (see TranscriptionService).
+        self._transcription_service = TranscriptionService()
         self._pipeline = Pipeline(
             self._recorder,
             self._transcriber,
             on_text=self._on_text,
             on_error=self._notify_error,
             on_cue=self._play_cue,
+            service=self._transcription_service,
         )
         self._ptt = PushToTalk(
             self._pipeline.press, self._pipeline.release, key=self._config.hotkey
         )
         self._restarting = False
+
+        self._meeting_session = MeetingSession(
+            self._store, self._transcription_service, self._transcriber, my_display_name()
+        )
+        self._meeting_was_active = False
 
         self._overlay = Overlay(position=self._config.overlay)
         self._overlay.set_sources(lambda: self._pipeline.state, lambda: self._recorder.level)
@@ -115,9 +137,13 @@ class RylanFlowApp(rumps.App):
         self._sounds_item.state = int(self._config.sounds)
         self._fillers_item = rumps.MenuItem("Remove um / uh", callback=self._toggle_fillers)
         self._fillers_item.state = int(self._config.remove_fillers)
+        self._meeting_item = rumps.MenuItem(
+            "Start meeting recording", callback=self._toggle_meeting
+        )
         self.menu = [
             rumps.MenuItem("Open Dashboard…", callback=self._open_dashboard),
             rumps.MenuItem("Copy last transcript", callback=self._copy_last),
+            self._meeting_item,
             None,
             model_menu,
             hotkey_menu,
@@ -159,9 +185,15 @@ class RylanFlowApp(rumps.App):
     # Runs on the main thread: the only place that touches the UI.
     @rumps.timer(0.2)
     def _render(self, _) -> None:
-        icon = ICONS[self._pipeline.state]
+        meeting_active = self._meeting_session.active
+        icon = ICONS[self._pipeline.state] + (MEETING_ICON if meeting_active else "")
         if self.title != icon:
             self.title = icon
+        if meeting_active != self._meeting_was_active:
+            self._meeting_was_active = meeting_active
+            self._meeting_item.title = (
+                "Stop meeting recording" if meeting_active else "Start meeting recording"
+            )
         self._pipeline.tick()
         if self._config.overlay != "off" and self._pipeline.state != "idle":
             self._overlay.ensure_running()  # cheap no-op once it's already running
@@ -183,6 +215,12 @@ class RylanFlowApp(rumps.App):
 
     def _toggle_fillers(self, sender: rumps.MenuItem) -> None:
         self._apply_settings_main_thread({"remove_fillers": not self._config.remove_fillers})
+
+    def _toggle_meeting(self, _sender: rumps.MenuItem) -> None:
+        if self._meeting_session.active:
+            self.stop_meeting()
+        else:
+            self.start_meeting()
 
     def _apply_settings_main_thread(self, changes: dict) -> dict:
         """The one place settings actually change. Must run on the main thread: it touches
@@ -243,6 +281,19 @@ class RylanFlowApp(rumps.App):
         AppHelper.callAfter(work)
         if not done.wait(APPLY_SETTINGS_TIMEOUT):
             log.warning("applying settings from the dashboard timed out")
+
+    def start_meeting(self) -> int:
+        """Starts a meeting (a no-op returning the same id if one is already active). Safe to
+        call from any thread -- MeetingSession.start() itself is, and _render picks up the menu
+        label and icon change on its own without needing to hop to the main thread here."""
+        meeting_id = self._meeting_session.start(
+            source_app=frontmost_app(), on_error=self._notify_error
+        )
+        self._notify("Recording meeting — open RylanFlow to stop.")
+        return meeting_id
+
+    def stop_meeting(self) -> int | None:
+        return self._meeting_session.stop()
 
     def _open_dashboard(self, _) -> None:
         try:
