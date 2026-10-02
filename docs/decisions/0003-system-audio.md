@@ -71,6 +71,21 @@ happens — a real prompt, a silent grant, or a hard failure that needs
 an entry in `NSScreenCaptureUsageDescription` in the packaged app's `Info.plist`. Packaging
 (step 3.10) should add whichever usage-description key turns out to be required.
 
+## Update — the packaged app needed a usage-description key after all
+The spike above ran unpackaged (from a dev terminal), where it worked with no permission prompt
+at all. Once packaged and shipped (step 3.4/3.7 wiring), starting a real meeting from
+`/Applications/RylanFlow.app` failed immediately with `SCShareableContent error ... The user
+declined TCCs for application, window, display capture` -- but no prompt was ever shown, and no
+row existed in `TCC.db` for `com.rylananderson.rylanflow` under `ScreenCapture`/`AudioCapture` at
+all. Root cause: `packaging/build.sh` never added `NSScreenCaptureUsageDescription` to
+`Info.plist`, so macOS silently refused to show the Screen & System Audio Recording permission
+prompt rather than asking the user -- exactly the risk this ADR flagged above and asked to be
+re-verified before shipping. Fixed by adding that key in `build.sh`. This also means a failed
+system-audio start currently takes down the *whole* meeting (see `MeetingSession
+._start_tracks_and_pump`, which doesn't distinguish "mic failed" from "system audio failed"), so
+this one missing key was silently blocking meeting recording entirely, including the mic-only
+side.
+
 ## Consequences
 - ✅ No virtual audio device, no BlackHole, no asking the user to configure a Multi-Output
   device — the original fallback-of-last-resort is unnecessary.
