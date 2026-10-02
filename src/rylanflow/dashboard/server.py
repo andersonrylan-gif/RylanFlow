@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _DICTATION_PATH = re.compile(r"/api/dictations/(\d+)")
+_MEETING_PATH = re.compile(r"/api/meetings/(\d+)")
 
 
 class Actions(Protocol):
@@ -35,6 +36,8 @@ class Actions(Protocol):
 
     def get_settings(self) -> dict: ...
     def apply_settings(self, changes: dict) -> None: ...
+    def start_meeting(self) -> int: ...
+    def stop_meeting(self) -> int | None: ...
 
 
 class DashboardServer:
@@ -164,6 +167,20 @@ def _make_handler(
                     self._deny()
                     return
                 self._json(HTTPStatus.OK, actions.get_settings())
+            elif parsed.path == "/api/meetings":
+                if not self._token_ok():
+                    self._deny()
+                    return
+                self._json(HTTPStatus.OK, store.list_meetings())
+            elif match := _MEETING_PATH.fullmatch(parsed.path):
+                if not self._token_ok():
+                    self._deny()
+                    return
+                meeting = store.get_meeting(int(match.group(1)))
+                if meeting is None:
+                    self._deny(HTTPStatus.NOT_FOUND)
+                else:
+                    self._json(HTTPStatus.OK, meeting)
             else:
                 self._deny(HTTPStatus.NOT_FOUND)
 
@@ -173,6 +190,11 @@ def _make_handler(
                 return
             if match := _DICTATION_PATH.fullmatch(self.path):
                 if store.delete_dictation(int(match.group(1))):
+                    self._json(HTTPStatus.OK, {"ok": True})
+                else:
+                    self._deny(HTTPStatus.NOT_FOUND)
+            elif match := _MEETING_PATH.fullmatch(self.path):
+                if store.delete_meeting(int(match.group(1))):
                     self._json(HTTPStatus.OK, {"ok": True})
                 else:
                     self._deny(HTTPStatus.NOT_FOUND)
@@ -186,6 +208,13 @@ def _make_handler(
             if self.path == "/api/copy":
                 pyperclip.copy(self._read_json().get("text", ""))
                 self._json(HTTPStatus.OK, {"ok": True})
+            elif self.path == "/api/meetings/start":
+                meeting_id = actions.start_meeting()
+                self._json(HTTPStatus.OK, store.get_meeting(meeting_id))
+            elif self.path == "/api/meetings/stop":
+                meeting_id = actions.stop_meeting()
+                result = store.get_meeting(meeting_id) if meeting_id else {"ok": True}
+                self._json(HTTPStatus.OK, result)
             else:
                 self._deny(HTTPStatus.NOT_FOUND)
 
