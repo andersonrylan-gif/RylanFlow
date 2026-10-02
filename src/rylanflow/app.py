@@ -114,6 +114,7 @@ class RylanFlowApp(rumps.App):
         self._meeting_was_active = False
         self._meeting_detector = MeetingDetector()
         self._meeting_indicator = MeetingIndicator()
+        self._watch_for_sleep()
 
         self._overlay = Overlay(position=self._config.overlay)
         self._overlay.set_sources(lambda: self._pipeline.state, lambda: self._recorder.level)
@@ -314,6 +315,22 @@ class RylanFlowApp(rumps.App):
     def stop_meeting(self) -> int | None:
         self._meeting_detector.note_external_stop()
         return self._meeting_session.stop()
+
+    def _watch_for_sleep(self) -> None:
+        """Stop an active meeting cleanly when the Mac is about to sleep (lid close, Apple menu
+        > Sleep, etc.) -- otherwise it would just sit "recording" with a closed lid, capturing
+        nothing, until the owner notices. A block-based observer needs no NSObject subclass,
+        unlike addObserver_selector_name_object_."""
+        from AppKit import NSWorkspace, NSWorkspaceWillSleepNotification
+
+        NSWorkspace.sharedWorkspace().notificationCenter().addObserverForName_object_queue_usingBlock_(
+            NSWorkspaceWillSleepNotification, None, None, lambda _note: self._on_system_sleep()
+        )
+
+    def _on_system_sleep(self) -> None:
+        if self._meeting_session.active:
+            log.info("system is going to sleep; stopping the active meeting")
+            self.stop_meeting()
 
     # --- auto-record: a background thread probes for "looks like a meeting" every 2s and
     # applies the (debounced) decision on the main thread ---
