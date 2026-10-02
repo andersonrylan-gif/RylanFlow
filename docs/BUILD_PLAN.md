@@ -159,7 +159,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** a tmp-path database covering add, list, search, delete, stats with a fake "now", and meeting, speaker and segment round-trips with cascade delete.
   - **Done when:** tests pass.
 
-- [ ] **0.4 Save every dictation.**
+- [x] **0.4 Save every dictation.**
   - **Files:** `pipeline.py`, `app.py`, `tests/test_pipeline.py`.
   - **Do:**
     - Change the `Pipeline` `on_text` callback to `on_text(text: str, seconds: float)`. `seconds` is `audio.size / SAMPLE_RATE`.

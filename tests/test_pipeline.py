@@ -72,7 +72,7 @@ def make():
         p = Pipeline(
             rec,
             transcriber or FakeTranscriber(),
-            texts.append,
+            lambda text, seconds: texts.append(text),
             on_error=errors.append,
             on_cue=cues.append,
             **kwargs,
@@ -83,6 +83,16 @@ def make():
     yield factory
     for p in pipelines:
         p.close()
+
+
+def test_on_text_receives_the_audio_duration_in_seconds():
+    calls = []
+    rec = FakeRecorder(np.ones(SAMPLE_RATE * 2, dtype=np.float32))  # 2 seconds of audio
+    p = Pipeline(rec, FakeTranscriber(), lambda text, seconds: calls.append((text, seconds)))
+    p.press()
+    p.release()
+    assert wait_for(lambda: calls == [("hello", 2.0)])
+    p.close()
 
 
 def test_press_release_emits_text(make):
