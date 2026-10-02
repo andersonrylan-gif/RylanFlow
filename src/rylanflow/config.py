@@ -17,6 +17,8 @@ class Config:
     hotkey: str = "alt_r"  # pynput key name; alt_r is Right Option
     model: str = FAST_MODEL  # Hugging Face repo of an mlx-whisper model
     language: str | None = None  # e.g. "en"; None lets Whisper auto-detect
+    sounds: bool = True  # play a cue when recording starts and stops
+    remove_fillers: bool = True  # drop "um" / "uh" from transcripts
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -31,7 +33,12 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
 
 def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f'hotkey = "{config.hotkey}"', f'model = "{config.model}"']
+    lines = [
+        f'hotkey = "{config.hotkey}"',
+        f'model = "{config.model}"',
+        f"sounds = {str(config.sounds).lower()}",
+        f"remove_fillers = {str(config.remove_fillers).lower()}",
+    ]
     if config.language:
         lines.append(f'language = "{config.language}"')
     path.write_text("\n".join(lines) + "\n")
