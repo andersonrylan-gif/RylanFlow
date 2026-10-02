@@ -11,6 +11,6 @@ uv run pyinstaller --noconfirm --windowed --name RylanFlow \
 PLIST=packaging/dist/RylanFlow.app/Contents/Info.plist
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'RylanFlow records your voice to transcribe it on this Mac.'" "$PLIST"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.1.0" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.1.1" "$PLIST"
 codesign --force --deep --sign - packaging/dist/RylanFlow.app
 echo "Built packaging/dist/RylanFlow.app"

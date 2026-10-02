@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 - 2026-10-02
+- Standalone `RylanFlow.app` (PyInstaller): menu-bar only, asks for its own permissions
+- Fixed: the packaged app no longer starts extra copies on each dictation (duplicate icons and repeated pastes); a second copy now exits immediately
+- New menu items: **Hotkey** (Right Option / Command / Control), **Sound cues**, **Remove um / uh**
+- `rylanflow autostart on` starts the app at login and launches the packaged app when it is in Applications
+- Design notes: ADR 0002 (clipboard paste) and `docs/architecture.md`
+
 ## 0.1.0 - 2026-10-02
 First release: push-to-talk dictation for macOS.
 
