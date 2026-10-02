@@ -81,3 +81,34 @@ an entry in `NSScreenCaptureUsageDescription` in the packaged app's `Info.plist`
   else, per the note above.
 - The 2-tuple-not-3-tuple and `objc.super()` gotchas are exactly the kind of thing that would
   otherwise cost real debugging time in step 3.3; they're now known going in.
+
+## Appendix — step 3.1: detecting which app is using the microphone
+
+`scripts/spike_mic_users.py` lists every audio "process object" via `ctypes` on
+`/System/Library/Frameworks/CoreAudio.framework/CoreAudio`
+(`kAudioHardwarePropertyProcessObjectList`, fourCC `'prs#'`), then reads each one's PID
+(`'ppid'`), bundle ID (`'pbid'`, a `CFStringRef` converted via `objc.objc_object(c_void_p=...)`)
+and whether it's currently recording (`'piri'`, `kAudioProcessPropertyIsRunningInput`). It also
+lists on-screen window titles via `Quartz.CGWindowListCopyWindowInfo`.
+
+**Verified against a real Google Meet call** (joined via `meet.new`, Claude in Chrome driving
+the browser directly, left immediately after capturing evidence):
+- While in the call: `com.google.Chrome.helper` (not the plain `com.google.Chrome` bundle —
+  it's specifically the `.helper` subprocess that does the actual media capture) showed
+  `running_input = 1`.
+- A Chrome window was titled exactly `"Meet - qid-zado-xsn"` — contains "Meet", as the plan
+  expected, though it needed `CGWindowListCopyWindowInfo` **without** the `OnScreenOnly` option
+  to show up, since the tab wasn't the frontmost/visible one at the time. Step 3.7's detector
+  should not filter to on-screen-only windows for this reason.
+- After leaving the call, `running_input` correctly dropped back to `0` within one poll.
+- **Also worth knowing:** `ai.krisp.krispMac` (the Krisp noise-cancellation app, already
+  installed on this Mac) showed `running_input = 1` *at the same time* as Chrome — multiple
+  processes can legitimately hold mic input simultaneously. The step-3.7 detector needs to treat
+  "is some meeting app's bundle ID in the running-input set" as the signal, not assume there's
+  only ever one.
+- No window titles or bundle IDs from Zoom were captured (not installed/tested on this machine);
+  worth trying when the real detector lands in 3.7.
+
+Neither of these spike runs required any permission prompt beyond what was already granted
+(Microphone, from earlier dictation testing) — consistent with 3.0's finding that this class of
+audio-focused ScreenCaptureKit/CoreAudio usage didn't visibly gate on Screen Recording here.
