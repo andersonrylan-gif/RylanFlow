@@ -10,6 +10,7 @@ import rumps
 from rylanflow.config import Config, load_config, save_config
 from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
+from rylanflow.instance import acquire
 from rylanflow.logs import LOG_PATH, setup_logging
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
@@ -138,5 +139,8 @@ class RylanFlowApp(rumps.App):
 
 def main() -> None:
     setup_logging()
+    if not acquire():
+        log.warning("another RylanFlow is already running; exiting")
+        return
     log.info("starting RylanFlow")
     RylanFlowApp().run()
