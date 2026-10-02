@@ -58,3 +58,22 @@ def test_parse_key():
     assert parse_key("a") == keyboard.KeyCode.from_char("a")
     with pytest.raises(ValueError):
         parse_key("nope")
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_on_done_fires_even_for_taps_and_failures():
+    done = []
+
+    class Boom:
+        def transcribe(self, audio):
+            raise RuntimeError("model failed")
+
+    for audio, transcriber in [
+        (np.ones(100, dtype=np.float32), FakeTranscriber()),
+        (np.ones(SAMPLE_RATE, dtype=np.float32), Boom()),
+    ]:
+        pipeline = Pipeline(
+            FakeRecorder(audio), transcriber, lambda t: None, lambda: done.append(1)
+        )
+        pipeline.stop_and_transcribe().join()
+    assert done == [1, 1]

@@ -66,6 +66,8 @@ def main() -> None:
     ls.add_argument("-m", "--model", default=DEFAULT_MODEL)
     ls.add_argument("-k", "--key", default="alt_r", help="pynput key name (default alt_r)")
     ls.add_argument("--paste", action="store_true", help="paste into the focused app")
+    ap = sub.add_parser("app", help="run the menu-bar app")
+    ap.add_argument("-k", "--key", default="alt_r")
     args = parser.parse_args()
 
     if args.command == "record":
@@ -74,6 +76,10 @@ def main() -> None:
         transcribe(args.file, args.model)
     elif args.command == "listen":
         listen(args.model, args.key, args.paste)
+    elif args.command == "app":
+        from rylanflow.app import main as run_app  # imports AppKit, keep it lazy
+
+        run_app(key=args.key)
     else:
         print(f"RylanFlow {__version__}")
 
