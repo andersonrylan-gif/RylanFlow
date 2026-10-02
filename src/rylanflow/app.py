@@ -2,13 +2,16 @@
 
 import logging
 import subprocess
+import threading
 
 import pyperclip
 import rumps
+from PyObjCTools import AppHelper
 
 from rylanflow import sounds
 from rylanflow.cleanup import remove_fillers
 from rylanflow.config import Config, load_config, save_config
+from rylanflow.dashboard.server import DashboardServer
 from rylanflow.hotkey import PushToTalk
 from rylanflow.inserter import ClipboardInserter
 from rylanflow.instance import acquire
@@ -18,6 +21,8 @@ from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
 from rylanflow.store import Store
 from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
+
+APPLY_SETTINGS_TIMEOUT = 5.0  # seconds the dashboard's HTTP thread waits for the main thread
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +80,12 @@ class RylanFlowApp(rumps.App):
         )
         self._restarting = False
 
+        # `self` satisfies the dashboard's Actions protocol (get_settings/apply_settings below).
+        self._dashboard = DashboardServer(self._store, self)
+        self._dashboard_url = self._dashboard.start()
+        log.info("dashboard listening at %s", self._dashboard_url.split("?")[0])
+        self._dashboard_window = None  # created lazily, on the main thread, on first use
+
         self._model_items = {}
         model_menu = rumps.MenuItem("Model")
         for label, repo in MODELS.items():
@@ -96,6 +107,7 @@ class RylanFlowApp(rumps.App):
         self._fillers_item = rumps.MenuItem("Remove um / uh", callback=self._toggle_fillers)
         self._fillers_item.state = int(self._config.remove_fillers)
         self.menu = [
+            rumps.MenuItem("Open Dashboard…", callback=self._open_dashboard),
             rumps.MenuItem("Copy last transcript", callback=self._copy_last),
             None,
             model_menu,
@@ -150,28 +162,75 @@ class RylanFlowApp(rumps.App):
             relaunch_and_exit()
 
     def _pick_model(self, sender: rumps.MenuItem) -> None:
-        self._config.model = MODELS[sender.title]
-        self._transcriber.model = self._config.model
-        for item in self._model_items.values():
-            item.state = int(item is sender)
-        save_config(self._config)
+        self._apply_settings_main_thread({"model": MODELS[sender.title]})
 
     def _pick_hotkey(self, sender: rumps.MenuItem) -> None:
-        self._config.hotkey = HOTKEYS[sender.title]
-        self._ptt.set_key(self._config.hotkey)
-        for item in self._hotkey_items.values():
-            item.state = int(item is sender)
-        save_config(self._config)
+        self._apply_settings_main_thread({"hotkey": HOTKEYS[sender.title]})
 
     def _toggle_sounds(self, sender: rumps.MenuItem) -> None:
-        self._config.sounds = not self._config.sounds
-        sender.state = int(self._config.sounds)
-        save_config(self._config)
+        self._apply_settings_main_thread({"sounds": not self._config.sounds})
 
     def _toggle_fillers(self, sender: rumps.MenuItem) -> None:
-        self._config.remove_fillers = not self._config.remove_fillers
-        sender.state = int(self._config.remove_fillers)
+        self._apply_settings_main_thread({"remove_fillers": not self._config.remove_fillers})
+
+    def _apply_settings_main_thread(self, changes: dict) -> dict:
+        """The one place settings actually change. Must run on the main thread: it touches
+        AppKit menu items. Both the menu callbacks above and the dashboard (via apply_settings,
+        hopping over with AppHelper.callAfter) go through this."""
+        if (hotkey := changes.get("hotkey")) in HOTKEYS.values():
+            self._config.hotkey = hotkey
+            self._ptt.set_key(hotkey)
+            for item in self._hotkey_items.values():
+                item.state = int(HOTKEYS[item.title] == hotkey)
+        if (model := changes.get("model")) in MODELS.values():
+            self._config.model = model
+            self._transcriber.model = model
+            for item in self._model_items.values():
+                item.state = int(MODELS[item.title] == model)
+        if "sounds" in changes:
+            self._config.sounds = bool(changes["sounds"])
+            self._sounds_item.state = int(self._config.sounds)
+        if "remove_fillers" in changes:
+            self._config.remove_fillers = bool(changes["remove_fillers"])
+            self._fillers_item.state = int(self._config.remove_fillers)
         save_config(self._config)
+        return self.get_settings()
+
+    # --- dashboard.server.Actions protocol: may be called from the dashboard's HTTP thread ---
+
+    def get_settings(self) -> dict:
+        return {
+            "hotkey": self._config.hotkey,
+            "model": self._config.model,
+            "sounds": self._config.sounds,
+            "remove_fillers": self._config.remove_fillers,
+        }
+
+    def apply_settings(self, changes: dict) -> None:
+        done = threading.Event()
+
+        def work() -> None:
+            try:
+                self._apply_settings_main_thread(changes)
+            finally:
+                done.set()
+
+        AppHelper.callAfter(work)
+        if not done.wait(APPLY_SETTINGS_TIMEOUT):
+            log.warning("applying settings from the dashboard timed out")
+
+    def _open_dashboard(self, _) -> None:
+        try:
+            from rylanflow.dashboard.window import DashboardWindow
+
+            if self._dashboard_window is None:
+                self._dashboard_window = DashboardWindow(self._dashboard_url)
+            self._dashboard_window.show()
+        except Exception:
+            log.exception("could not open the native dashboard window; opening in a browser")
+            import webbrowser
+
+            webbrowser.open(self._dashboard_url)
 
     def _copy_last(self, _) -> None:
         if self._last_transcript:
@@ -189,6 +248,12 @@ class RylanFlowApp(rumps.App):
                 "Grant Accessibility and Input Monitoring in System Settings, then restart."
             )
         self._ptt.start()
+        if not self._config.dashboard_seen:
+            self._config.dashboard_seen = True
+            save_config(self._config)
+            # Scheduled rather than called directly: the run loop below hasn't started yet, and
+            # AppHelper.callAfter defers this block until it has.
+            AppHelper.callAfter(lambda: self._open_dashboard(None))
         super().run(**options)
 
 

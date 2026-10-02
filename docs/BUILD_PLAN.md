@@ -203,7 +203,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** none automated (static). Open the server URL in a browser and check by hand.
   - **Done when:** it works in Safari via the URL and looks clean in light and dark mode.
 
-- [ ] **1.3 Native dashboard window.**
+- [x] **1.3 Native dashboard window.**
   - **Files:** `dashboard/window.py`, `app.py`; `uv add pyobjc-framework-WebKit`.
   - **Do:**
     - `DashboardWindow(url)` creates (lazily, on the main thread) an `NSWindow` of about 1000×700, titled "RylanFlow", with close, miniaturize and resizable styles, and sets `setReleasedWhenClosed_(False)` so it can be reopened.
