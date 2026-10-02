@@ -21,6 +21,7 @@ class Config:
     remove_fillers: bool = True  # drop "um" / "uh" from transcripts
     dashboard_seen: bool = False  # True once the dashboard has auto-opened on first launch
     overlay: str = "bottom"  # where the dictation pop-up appears: "bottom", "top", or "off"
+    auto_record_meetings: bool = True  # auto-start/stop meeting recording from detector.py
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -42,6 +43,7 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
         f"remove_fillers = {str(config.remove_fillers).lower()}",
         f"dashboard_seen = {str(config.dashboard_seen).lower()}",
         f'overlay = "{config.overlay}"',
+        f"auto_record_meetings = {str(config.auto_record_meetings).lower()}",
     ]
     if config.language:
         lines.append(f'language = "{config.language}"')
