@@ -3,6 +3,7 @@ import time
 import wave
 
 import numpy as np
+import pytest
 
 from rylanflow import recorder
 from rylanflow.recorder import AudioStuckError, Recorder, write_wav
@@ -35,6 +36,28 @@ def test_recorder_collects_chunks(monkeypatch):
     assert not r.recording
     assert audio.shape == (480,)
     assert audio.dtype == np.float32
+
+
+def test_level_reflects_the_most_recent_block(monkeypatch):
+    monkeypatch.setattr(recorder.sd, "InputStream", FakeStream)
+    r = Recorder()
+    assert r.level == 0.0  # nothing recorded yet
+    r.start()
+    # FakeStream feeds blocks that are all 0.5, so the RMS is exactly 0.5.
+    assert r.level == pytest.approx(0.5)
+    r.stop()
+    assert r.level == 0.0  # reset once we're done, so the overlay doesn't show a stale meter
+
+
+def test_level_is_zero_for_silence(monkeypatch):
+    class SilentStream(FakeStream):
+        def start(self):
+            self.callback(np.zeros((160, 1), dtype=np.float32), 160, None, None)
+
+    monkeypatch.setattr(recorder.sd, "InputStream", SilentStream)
+    r = Recorder()
+    r.start()
+    assert r.level == 0.0
 
 
 def test_stop_without_audio_returns_empty():
