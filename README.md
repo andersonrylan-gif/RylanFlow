@@ -22,7 +22,7 @@ Each stage is a small module behind an interface, so pieces can be swapped or re
 Requires an Apple Silicon Mac and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/<your-username>/RylanFlow.git
+git clone https://github.com/andersonrylan-gif/RylanFlow.git
 cd RylanFlow
 uv sync
 uv run rylanflow
