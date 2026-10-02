@@ -218,8 +218,10 @@
   const meetingDetailView = document.getElementById("meeting-detail-view");
   const meetingsList = document.getElementById("meetings-list");
   const meetingToggle = document.getElementById("meeting-toggle");
+  const meetingsSearchInput = document.getElementById("meetings-search");
   let meetingsCache = [];
   let currentMeetingId = null; // set while the detail view is open
+  let currentMeetingsQuery = "";
   const meetingConfirming = new Set();
 
   function showMeetingsList() {
@@ -247,7 +249,11 @@
     meetingToggle.classList.toggle("danger-solid", anyActive);
 
     if (rows.length === 0) {
-      meetingsList.innerHTML = `<div class="empty">No meetings yet — start one from here or the menu bar.</div>`;
+      meetingsList.innerHTML = `<div class="empty">${
+        currentMeetingsQuery
+          ? "No meetings match your search."
+          : "No meetings yet — start one from here or the menu bar."
+      }</div>`;
       return;
     }
     let html = "";
@@ -278,8 +284,18 @@
   }
 
   async function refreshMeetingsList() {
-    renderMeetingsList(await api("/api/meetings"));
+    const q = currentMeetingsQuery ? `?q=${encodeURIComponent(currentMeetingsQuery)}` : "";
+    renderMeetingsList(await api(`/api/meetings${q}`));
   }
+
+  let meetingsSearchDebounce;
+  meetingsSearchInput.addEventListener("input", () => {
+    clearTimeout(meetingsSearchDebounce);
+    meetingsSearchDebounce = setTimeout(() => {
+      currentMeetingsQuery = meetingsSearchInput.value.trim();
+      refreshMeetingsList();
+    }, 200);
+  });
 
   meetingsList.addEventListener("click", async (e) => {
     const card = e.target.closest(".meeting-card");

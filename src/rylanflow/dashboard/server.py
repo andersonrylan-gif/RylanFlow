@@ -171,7 +171,8 @@ def _make_handler(
                 if not self._token_ok():
                     self._deny()
                     return
-                self._json(HTTPStatus.OK, store.list_meetings())
+                query = parse_qs(parsed.query).get("q", [None])[0] or None
+                self._json(HTTPStatus.OK, store.list_meetings(query))
             elif match := _MEETING_PATH.fullmatch(parsed.path):
                 if not self._token_ok():
                     self._deny()
