@@ -22,6 +22,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pyperclip
 
+from rylanflow.meetings.export import to_markdown
 from rylanflow.store import Store
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ log = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _DICTATION_PATH = re.compile(r"/api/dictations/(\d+)")
 _MEETING_PATH = re.compile(r"/api/meetings/(\d+)")
+_MEETING_EXPORT_PATH = re.compile(r"/api/meetings/(\d+)/export\.md")
 
 
 class Actions(Protocol):
@@ -173,6 +175,24 @@ def _make_handler(
                     return
                 query = parse_qs(parsed.query).get("q", [None])[0] or None
                 self._json(HTTPStatus.OK, store.list_meetings(query))
+            elif match := _MEETING_EXPORT_PATH.fullmatch(parsed.path):
+                if not self._token_ok():
+                    self._deny()
+                    return
+                meeting = store.get_meeting(int(match.group(1)))
+                if meeting is None:
+                    self._deny(HTTPStatus.NOT_FOUND)
+                else:
+                    body = to_markdown(meeting).encode("utf-8")
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "text/markdown; charset=utf-8")
+                    self.send_header(
+                        "Content-Disposition",
+                        f'attachment; filename="meeting-{meeting["id"]}.md"',
+                    )
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
             elif match := _MEETING_PATH.fullmatch(parsed.path):
                 if not self._token_ok():
                     self._deny()

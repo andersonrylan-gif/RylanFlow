@@ -226,3 +226,30 @@ def test_open_dashboard_falls_back_to_the_browser_if_webkit_import_fails(make_ap
     app._open_dashboard(None)
 
     assert opened == [app._dashboard_url]
+
+
+class FakeMeetingSession:
+    def __init__(self, active):
+        self.active = active
+
+
+def test_on_system_sleep_stops_an_active_meeting(make_app):
+    app, _store = make_app()
+    stopped = []
+    app._meeting_session = FakeMeetingSession(active=True)
+    app.stop_meeting = lambda: stopped.append(1)
+
+    app._on_system_sleep()
+
+    assert stopped == [1]
+
+
+def test_on_system_sleep_is_a_noop_without_an_active_meeting(make_app):
+    app, _store = make_app()
+    stopped = []
+    app._meeting_session = FakeMeetingSession(active=False)
+    app.stop_meeting = lambda: stopped.append(1)
+
+    app._on_system_sleep()
+
+    assert stopped == []
