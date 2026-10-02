@@ -11,10 +11,27 @@ PLIST_PATH = Path(f"~/Library/LaunchAgents/{LABEL}.plist").expanduser()
 LOG_DIR = Path("~/Library/Logs/RylanFlow").expanduser()
 
 
-def build_plist(python: str) -> dict:
+APP_PATHS = [
+    Path("/Applications/RylanFlow.app"),
+    Path("~/Applications/RylanFlow.app").expanduser(),
+]
+
+
+def find_app() -> Path | None:
+    return next((p for p in APP_PATHS if p.exists()), None)
+
+
+def launch_command(python: str, app: Path | None) -> list[str]:
+    """Prefer the packaged app (launched through LaunchServices so its own permissions apply)."""
+    if app is not None:
+        return ["/usr/bin/open", "-a", str(app)]
+    return [python, "-m", "rylanflow", "app"]
+
+
+def build_plist(python: str, app: Path | None = None) -> dict:
     return {
         "Label": LABEL,
-        "ProgramArguments": [python, "-m", "rylanflow", "app"],
+        "ProgramArguments": launch_command(python, app),
         "RunAtLoad": True,
         # Restart after a crash, but not after the user picks Quit (a clean exit).
         "KeepAlive": {"SuccessfulExit": False},
@@ -40,12 +57,13 @@ def enable() -> str:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
     with PLIST_PATH.open("wb") as f:
-        plistlib.dump(build_plist(sys.executable), f)
+        plistlib.dump(build_plist(sys.executable, find_app()), f)
     _launchctl("bootout", f"{_domain()}/{LABEL}")  # replace any older copy
     result = _launchctl("bootstrap", _domain(), str(PLIST_PATH))
     if result.returncode != 0:
         return f"Installed {PLIST_PATH}, but launchctl said: {result.stderr.strip()}"
-    return f"RylanFlow will now start at login (installed {PLIST_PATH})."
+    what = "the app in Applications" if find_app() else "the Python version (no .app found)"
+    return f"RylanFlow will now start at login using {what} (installed {PLIST_PATH})."
 
 
 def disable() -> str:
