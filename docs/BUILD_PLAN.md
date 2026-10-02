@@ -251,7 +251,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
     - Use `orderFrontRegardless()` so it never steals focus. Pasting must still go to the user's app: verify the paste lands in Notes while the pop-up is visible.
   - **Done when:** holding the hotkey shows the bars moving with your voice at the bottom center; releasing shows the dots, which disappear after the paste. It works over a full-screen app, and the setting can move it to the top or turn it off.
 
-- [ ] **2.3 Release v0.2.0.**
+- [x] **2.3 Release v0.2.0.**
   - **Do:**
     - Update `CHANGELOG.md`, bump `pyproject.toml`, `src/rylanflow/__init__.py` and the build.sh plist version, and update the README (screenshots of the dashboard and pop-up go in `docs/images/`; ask the owner to take them, or use `screencapture -l`).
     - In `packaging/build.sh`, add `--add-data "../src/rylanflow/dashboard/static:rylanflow/dashboard/static"` (check the path with the spec), plus `--hidden-import WebKit`.
