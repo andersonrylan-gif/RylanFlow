@@ -438,7 +438,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 >   meaningful complexity and disk/RAM cost) or calling a cloud API (breaks the stance). **Don't
 >   build this without the owner picking one** -- flagged, not decided, as of this writing.
 
-- [ ] **4.1 MCP server: expose dictations and meetings to other AI tools.**
+- [x] **4.1 MCP server: expose dictations and meetings to other AI tools.**
   - **Files:** `src/rylanflow/mcp_server.py` (new), `src/rylanflow/__main__.py` (new `mcp`
     subcommand), `pyproject.toml` (`uv add mcp`, the official Python SDK).
   - **Do:**
