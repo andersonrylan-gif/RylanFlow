@@ -153,7 +153,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** none automated.
   - **Done when:** build, grant permissions once, rebuild, reinstall, and the log has no "not trusted" warning without re-granting. If `codesign` rejects the identity, debug with `security find-identity -p codesigning`. If it can't be made to work in about an hour, stop, document it in the PR and move on. It's a nice-to-have.
 
-- [ ] **0.3 Store.**
+- [x] **0.3 Store.**
   - **Files:** `src/rylanflow/store.py`, `tests/test_store.py`.
   - **Do:** schema and API as in section 5. The `data_dir()` helper honours `RYLANFLOW_DATA_DIR`. Migrations go in a list of SQL scripts indexed by `user_version`. Timestamps are ISO 8601 UTC (`datetime.now(UTC).isoformat()`). Keep FTS in sync with triggers (insert and delete).
   - **Tests:** a tmp-path database covering add, list, search, delete, stats with a fake "now", and meeting, speaker and segment round-trips with cascade delete.
