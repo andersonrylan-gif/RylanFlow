@@ -87,6 +87,7 @@ def make_session(
     mic_cls=FakeTrack,
     system_cls=FakeTrack,
     calendar_lookup=None,
+    diarizer=None,
 ):
     store = Store(tmp_path / "test.db")
     service = TranscriptionService()
@@ -111,6 +112,7 @@ def make_session(
         mic_factory,
         system_factory,
         calendar_lookup=calendar_lookup,
+        diarizer=diarizer,
     )
     return session, store, service, mic_tracks, system_tracks
 
@@ -381,4 +383,89 @@ def test_without_a_calendar_lookup_nothing_happens(tmp_path):
         assert store.get_meeting(meeting_id)["title"] is None
     finally:
         session.stop()
+        service.stop()
+
+
+class FakeDiarizer:
+    def __init__(self, turns=None, raises=False):
+        self.turns = turns or []
+        self.raises = raises
+        self.calls = []
+
+    def diarize(self, wav_path):
+        self.calls.append(wav_path)
+        if self.raises:
+            raise RuntimeError("diarization failed")
+        return self.turns
+
+
+def test_diarization_splits_others_into_a_named_speaker(tmp_path):
+    diarizer = FakeDiarizer(turns=[(0.0, 1.0, 0)])
+    session, store, service, _mic_tracks, system_tracks = make_session(tmp_path, diarizer=diarizer)
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: system_tracks and system_tracks[0].started)
+        system_tracks[0].feed(LOUD)
+        session.stop()
+
+        assert wait_for(lambda: store.get_meeting(meeting_id)["status"] == "done", timeout=5.0)
+        meeting = store.get_meeting(meeting_id)
+        labels = {s["label"] for s in meeting["speakers"]}
+        assert "Others" not in labels
+        assert "Speaker 1" in labels
+        [segment] = meeting["segments"]
+        speaker = next(s for s in meeting["speakers"] if s["id"] == segment["speaker_id"])
+        assert speaker["label"] == "Speaker 1"
+        assert diarizer.calls
+    finally:
+        service.stop()
+
+
+def test_diarization_failure_keeps_others_and_the_transcript(tmp_path):
+    diarizer = FakeDiarizer(raises=True)
+    session, store, service, _mic_tracks, system_tracks = make_session(tmp_path, diarizer=diarizer)
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: system_tracks and system_tracks[0].started)
+        system_tracks[0].feed(LOUD)
+        session.stop()
+
+        assert wait_for(lambda: store.get_meeting(meeting_id)["status"] == "done", timeout=5.0)
+        meeting = store.get_meeting(meeting_id)
+        labels = {s["label"] for s in meeting["speakers"]}
+        assert "Others" in labels
+        assert len(meeting["segments"]) == 1  # the transcript survives a diarization failure
+    finally:
+        service.stop()
+
+
+def test_without_a_diarizer_others_is_left_as_is(tmp_path):
+    session, store, service, _mic_tracks, system_tracks = make_session(tmp_path)
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: system_tracks and system_tracks[0].started)
+        system_tracks[0].feed(LOUD)
+        session.stop()
+
+        assert wait_for(lambda: store.get_meeting(meeting_id)["status"] == "done", timeout=5.0)
+        labels = {s["label"] for s in store.get_meeting(meeting_id)["speakers"]}
+        assert "Others" in labels
+    finally:
+        service.stop()
+
+
+def test_diarization_with_no_system_segments_is_never_invoked(tmp_path):
+    diarizer = FakeDiarizer(turns=[(0.0, 1.0, 0)])
+    session, store, service, mic_tracks, _system_tracks = make_session(tmp_path, diarizer=diarizer)
+    try:
+        meeting_id = session.start()
+        assert wait_for(lambda: mic_tracks and mic_tracks[0].started)
+        mic_tracks[0].feed(LOUD)  # only mic audio -- nothing on the system track to diarize
+        session.stop()
+
+        assert wait_for(lambda: store.get_meeting(meeting_id)["status"] == "done", timeout=5.0)
+        labels = {s["label"] for s in store.get_meeting(meeting_id)["speakers"]}
+        assert "Others" in labels
+        assert diarizer.calls == []
+    finally:
         service.stop()

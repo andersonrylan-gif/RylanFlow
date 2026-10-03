@@ -7,9 +7,13 @@
 # identity hasn't been created yet.
 set -e
 rm -rf packaging/build packaging/dist
+# Must run before pyinstaller: it needs sherpa_onnx to actually import so its analysis can find
+# and bundle the (fixed-in-place) libonnxruntime.dylib. See docs/decisions/0004-diarization-blocked.md.
+uv run python scripts/fix_sherpa_onnx_dylib.py
 uv run pyinstaller --noconfirm --windowed --name RylanFlow \
   --osx-bundle-identifier com.rylananderson.rylanflow \
   --collect-all mlx --collect-all mlx_whisper --collect-all sounddevice \
+  --collect-all sherpa_onnx \
   --hidden-import rumps --hidden-import pynput.keyboard._darwin --hidden-import WebKit \
   --hidden-import EventKit \
   --add-data "../src/rylanflow/dashboard/static:rylanflow/dashboard/static" \

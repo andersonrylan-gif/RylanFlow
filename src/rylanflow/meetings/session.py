@@ -17,6 +17,7 @@ from datetime import datetime
 from rylanflow.meetings import speakers
 from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.chunker import Chunker
+from rylanflow.meetings.diarize import Diarizer
 from rylanflow.meetings.mic_track import MicTrack
 from rylanflow.meetings.system_audio import SystemAudioTrack
 from rylanflow.store import Store, data_dir
@@ -43,11 +44,13 @@ class MeetingSession:
         system_track_factory: Callable[[object], SystemAudioTrack] = SystemAudioTrack,
         clock=time.monotonic,
         calendar_lookup: CalendarLookup | None = None,
+        diarizer: Diarizer | None = None,
     ) -> None:
         """Factories let tests substitute fake tracks; in production they default to the real
         MicTrack/SystemAudioTrack, each constructed fresh per meeting with that meeting's own
-        WAV path (data_dir()/meetings/<id>/{mic,system}.wav). `calendar_lookup` is optional --
-        None (the default, and what tests use) skips the calendar-title lookup entirely."""
+        WAV path (data_dir()/meetings/<id>/{mic,system}.wav). `calendar_lookup` and `diarizer`
+        are both optional -- None (the default, and what tests use) skips the calendar-title
+        lookup / the post-meeting speaker-splitting step entirely."""
         self._store = store
         self._service = service
         self._transcriber = transcriber
@@ -56,6 +59,7 @@ class MeetingSession:
         self._system_track_factory = system_track_factory
         self._clock = clock
         self._calendar_lookup = calendar_lookup
+        self._diarizer = diarizer
 
         self._meeting_id: int | None = None
         self._you_id: int | None = None
@@ -188,9 +192,53 @@ class MeetingSession:
             log.warning(
                 "meeting %s: still-pending transcriptions after the stop timeout", meeting_id
             )
-        # Step 3.5 (diarization) will hook in here later, as a further status transition; for
-        # now there's nothing after transcription, so the meeting is simply done.
+        self._run_diarization(meeting_id)
         self._store.finish_meeting(meeting_id, "done")
+
+    def _run_diarization(self, meeting_id: int) -> None:
+        """Best-effort: splits "Others" into Speaker 1..N by running the diarizer over
+        system.wav. Any failure (no diarizer configured, model download failed, bad audio, no
+        system-track segments at all, etc.) just leaves "Others" as-is -- the transcript itself
+        is never at risk, and the caller always moves on to mark the meeting "done" after this."""
+        if self._diarizer is None:
+            return
+        meeting = self._store.get_meeting(meeting_id)
+        if meeting is None:
+            return
+        system_segments = [s for s in meeting["segments"] if s["track"] == _SYSTEM_TRACK]
+        if not system_segments:
+            return
+        self._store.finish_meeting(meeting_id, "processing")
+        try:
+            meeting_dir = data_dir() / "meetings" / str(meeting_id)
+            turns = self._diarizer.diarize(meeting_dir / "system.wav")
+            turn_by_segment = speakers.assign(system_segments, turns)
+        except Exception:
+            log.exception("meeting %s: diarization failed", meeting_id)
+            return
+        if not turn_by_segment:
+            return
+
+        speaker_ids: dict[int, int] = {}
+        reassignments: dict[int, int] = {}
+        for seg in system_segments:
+            turn_index = turn_by_segment.get(seg["id"])
+            if turn_index is None:
+                continue
+            if turn_index not in speaker_ids:
+                # Numbered by order of first appearance, not the raw cluster index -- sherpa-
+                # onnx's cluster ids aren't guaranteed sequential/compact (e.g. 0, 1, 5, 13 for
+                # 4 speakers), which would otherwise show up as "Speaker 1", "Speaker 14", ....
+                speaker_number = len(speaker_ids) + 1
+                speaker_ids[turn_index] = self._store.add_speaker(
+                    meeting_id, f"Speaker {speaker_number}"
+                )
+            reassignments[seg["id"]] = speaker_ids[turn_index]
+        self._store.reassign_segments(reassignments)
+
+        others = next((s for s in meeting["speakers"] if s["label"] == "Others"), None)
+        if others is not None:
+            self._store.delete_speaker(others["id"])
 
     def _wait_for_pending(self, timeout: float) -> bool:
         deadline = self._clock() + timeout

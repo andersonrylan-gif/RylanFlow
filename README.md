@@ -27,6 +27,7 @@ See [docs/architecture.md](docs/architecture.md), [docs/BUILD_PLAN.md](docs/BUIL
 - Every dictation is saved locally (SQLite, `~/Library/Application Support/RylanFlow/`) so you can search and copy past ones
 - Menu-bar icon shows idle 🎙, recording 🔴 and transcribing ⏳
 - Settings (menu or dashboard): hotkey, model, pop-up position, sound cues, um/uh removal, start at login
+- **Meetings**: captures your mic and system audio, auto-starts/stops for Zoom/Meet/Teams/FaceTime/Webex/Slack huddles, transcribes live, and splits the other participants into named Speaker 1..N via on-device diarization — all local, searchable from the dashboard, exportable as Markdown
 
 ## Install
 
@@ -47,10 +48,11 @@ Requires an Apple Silicon Mac and [uv](https://docs.astral.sh/uv/).
 git clone https://github.com/andersonrylan-gif/RylanFlow.git
 cd RylanFlow
 uv sync
+uv run python scripts/fix_sherpa_onnx_dylib.py  # one-time workaround, see docs/decisions/0004-diarization.md
 uv run rylanflow app
 ```
 
-The first dictation downloads the Whisper model (about 150 MB for the fast model, about 1.6 GB for the accurate one). 
+The first dictation downloads the Whisper model (about 150 MB for the fast model, about 1.6 GB for the accurate one). The first meeting that finds something to diarize downloads the speaker-diarization models (about 46 MB, SHA-256 verified).
 
 Other commands: `rylanflow record`, `rylanflow transcribe FILE.wav`, `rylanflow listen [--paste]`.
 

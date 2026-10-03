@@ -8,6 +8,7 @@ dependencies = [
     "mcp>=2.2.0",
     "mlx-whisper>=0.4.3",
     "numpy>=2.5.3",
+    "onnxruntime>=1.30.0",
     "pynput>=1.8.2",
     "pyobjc-framework-coremedia>=12.2.2",
     "pyobjc-framework-eventkit>=12.2.2",
@@ -16,6 +17,7 @@ dependencies = [
     "pyobjc-framework-webkit>=12.2.2",
     "pyperclip>=1.11.0",
     "rumps>=0.4.0",
+    "sherpa-onnx>=1.13.8",
     "sounddevice>=0.5.6",
 ]
 

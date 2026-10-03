@@ -19,7 +19,9 @@ Push-to-talk dictation + meeting transcription for macOS. Python 3.12, uv, rumps
 - CI has no mic/screen/keyboard: put OS APIs behind interfaces and test logic with fakes.
 
 ## Commands
+- Setup: after `uv sync`, run `uv run python scripts/fix_sherpa_onnx_dylib.py` once (works around a broken upstream wheel needed for meeting diarization; see ADR 0004). CI and `packaging/build.sh` both run it too.
 - Run: `uv run rylanflow app` (kill old copies first: `pkill -9 -f "MacOS/RylanFlow"; pkill -f "rylanflow app"`)
+- MCP server (dictations/meetings, read-only): `uv run rylanflow mcp`
 - Build: `sh packaging/build.sh` → `packaging/dist/RylanFlow.app`; install with `ditto` to /Applications
 - Logs: `~/Library/Logs/RylanFlow/rylanflow.log`; hang debugging: `sample <pid> 3`, `kill -USR1 <pid>`
 - Data: `~/Library/Application Support/RylanFlow/` (SQLite, meeting audio, models); config `~/.config/rylanflow/config.toml`
