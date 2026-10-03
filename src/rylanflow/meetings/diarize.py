@@ -1,0 +1,137 @@
+"""Offline speaker diarization: after a meeting ends, meetings/session.py uses this to split the
+generic "Others" speaker into Speaker 1..N by running sherpa-onnx over the meeting's system.wav.
+
+Needs scripts/fix_sherpa_onnx_dylib.py to have been run once (see docs/decisions/
+0004-diarization.md for why) -- sherpa_onnx is imported lazily in _build() so that
+importing this module itself never requires that fix to already be in place.
+"""
+
+import hashlib
+import logging
+import shutil
+import tarfile
+import urllib.request
+import wave
+from pathlib import Path
+
+import numpy as np
+
+from rylanflow.store import data_dir
+
+log = logging.getLogger(__name__)
+
+SEGMENTATION_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+    "speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+)
+SEGMENTATION_SHA256 = "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"
+
+EMBEDDING_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+    "speaker-recongition-models/nemo_en_titanet_small.onnx"
+)
+EMBEDDING_SHA256 = "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e"
+
+# The library's own default (0.5) over-segmented a real 9-person meeting into 12 clusters;
+# 0.6 matched the true speaker count exactly (see docs/decisions/0004-diarization.md).
+DEFAULT_CLUSTERING_THRESHOLD = 0.6
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download(url: str, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(dest.name + ".part")
+    urllib.request.urlretrieve(url, tmp)  # noqa: S310 - fixed https URL, not user input
+    tmp.rename(dest)
+
+
+def _models_dir() -> Path:
+    return data_dir() / "models"
+
+
+def ensure_segmentation_model() -> Path:
+    model_path = _models_dir() / "pyannote-segmentation-3.0" / "model.onnx"
+    if model_path.exists():
+        return model_path
+    archive = _models_dir() / "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2"
+    _download(SEGMENTATION_URL, archive)
+    actual = _sha256(archive)
+    if actual != SEGMENTATION_SHA256:
+        archive.unlink(missing_ok=True)
+        raise RuntimeError(f"segmentation model checksum mismatch: got {actual}")
+    with tarfile.open(archive, "r:bz2") as tar:
+        member = next(
+            m for m in tar.getmembers() if m.name.endswith("model.onnx") and "int8" not in m.name
+        )
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        src = tar.extractfile(member)
+        if src is None:
+            raise RuntimeError("segmentation archive did not contain model.onnx")
+        with src, model_path.open("wb") as dst:
+            shutil.copyfileobj(src, dst)
+    archive.unlink(missing_ok=True)
+    return model_path
+
+
+def ensure_embedding_model() -> Path:
+    model_path = _models_dir() / "nemo_en_titanet_small.onnx"
+    if model_path.exists():
+        return model_path
+    _download(EMBEDDING_URL, model_path)
+    actual = _sha256(model_path)
+    if actual != EMBEDDING_SHA256:
+        model_path.unlink(missing_ok=True)
+        raise RuntimeError(f"embedding model checksum mismatch: got {actual}")
+    return model_path
+
+
+def _read_wav_samples(path: Path) -> np.ndarray:
+    with wave.open(str(path), "rb") as f:
+        pcm = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16)
+    return pcm.astype(np.float32) / 32768.0
+
+
+class Diarizer:
+    """Create one (cheap -- no model loading yet), call diarize(wav_path) after a meeting ends.
+    The sherpa-onnx pipeline and its models are built lazily on the first call, so constructing
+    a Diarizer never triggers a download."""
+
+    def __init__(self, threshold: float = DEFAULT_CLUSTERING_THRESHOLD) -> None:
+        self._threshold = threshold
+        self._diarization = None
+
+    def _build(self):
+        import sherpa_onnx
+
+        segmentation_model = ensure_segmentation_model()
+        embedding_model = ensure_embedding_model()
+        config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+            segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+                pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+                    model=str(segmentation_model)
+                )
+            ),
+            embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(embedding_model)),
+            clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=self._threshold),
+            min_duration_on=0.3,
+            min_duration_off=0.5,
+        )
+        return sherpa_onnx.OfflineSpeakerDiarization(config)
+
+    def diarize(self, wav_path: Path) -> list[tuple[float, float, int]]:
+        """(start, end, speaker_index) turns, sorted by start time. Speaker indices are 0-based
+        and only meaningful within this one call's result."""
+        samples = _read_wav_samples(wav_path)
+        if samples.size == 0:
+            return []
+        if self._diarization is None:
+            self._diarization = self._build()
+        result = self._diarization.process(samples)
+        return [(seg.start, seg.end, seg.speaker) for seg in result.sort_by_start_time()]

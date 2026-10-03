@@ -343,7 +343,7 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Tests:** `speakers.py` echo dedupe; a session test with fake tracks, a fake service and a temp store (segments stored with the right offsets and speakers; stop flushes).
   - **Done when:** start a meeting from the menu, play a YouTube interview and talk over it, and the transcript appears live in the dashboard with "You" and "Others" separated.
 
-- [ ] **3.5 Speaker separation (diarization) for "Others".**
+- [x] **3.5 Speaker separation (diarization) for "Others".**
   - **Files:** `meetings/diarize.py`, `meetings/speakers.py`, `meetings/session.py`, tests; `uv add sherpa-onnx`.
   - **Do:**
     - After `stop()`, a `meeting-post` thread loads `system.wav` and runs sherpa-onnx offline speaker diarization:
@@ -371,8 +371,9 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Done when:** after a two-person YouTube interview, the transcript shows Speaker 1 and Speaker 2 mostly correctly. Report the observed quality honestly in the PR.
 
 - [ ] **3.6 Names from the calendar and renaming.** (partial: calendar-suggested titles/attendees
-  done; the dashboard rename-UI is deferred until diarization -- 3.5, blocked -- gives there
-  more than "You"/"Others" to rename)
+  done. The dashboard rename-UI itself -- clicking a speaker chip to rename "Speaker 1" to a
+  real name -- is still not built, but is worth doing now that diarization (3.5) is unblocked
+  and actually produces more than "You"/"Others" to rename.)
   - **Files:** `meetings/calendar.py`, `session.py`, `dashboard/server.py`, static files, `packaging/build.sh` (plist `NSCalendarsFullAccessUsageDescription`); `uv add pyobjc-framework-EventKit`.
   - **Do:**
     - `CalendarLookup.current_event(at: datetime) -> Event(title, id, attendees: list[str], url)` uses `EKEventStore`:
@@ -431,8 +432,8 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 >   miss?" catch-up query, topic-organized AI summaries, and -- directly relevant here --
 >   **ships MCP access to meeting notes** as a real, shipped feature of a competing product.
 > - **Krisp**: on-device audio processing (same local-first stance as RylanFlow), speaker
->   identification with timestamps (this is step 3.5, currently blocked -- see ADR 0004), and
->   AI-generated meeting notes/action items.
+>   identification with timestamps (this is step 3.5 -- done, see ADR 0004), and AI-generated
+>   meeting notes/action items.
 > - **Gap that is a real decision, not an engineering task:** both competitors generate AI
 >   summaries and action items (cloud-side, in their case). RylanFlow was explicitly scoped as
 >   "transcripts only, no AI summaries, everything stays on the Mac" (section 1). Closing this

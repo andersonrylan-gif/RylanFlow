@@ -21,6 +21,7 @@ from rylanflow.meeting_indicator import MeetingIndicator
 from rylanflow.meetings import detector
 from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.detector_logic import MeetingDetector, Start, Stop
+from rylanflow.meetings.diarize import Diarizer
 from rylanflow.meetings.session import MeetingSession
 from rylanflow.overlay import Overlay
 from rylanflow.pipeline import Pipeline
@@ -94,6 +95,18 @@ def _build_calendar_lookup() -> CalendarLookup | None:
         return None
 
 
+def _build_diarizer() -> Diarizer | None:
+    """None if sherpa-onnx isn't importable (see docs/decisions/0004-diarization.md) --
+    meetings just keep everyone else under "Others" in that case, same as before diarization
+    existed. Building a Diarizer is cheap (no model loading/download until first use), so this
+    only really guards against sherpa_onnx itself being broken or missing."""
+    try:
+        return Diarizer()
+    except Exception:
+        log.exception('could not set up the speaker diarizer; meetings won\'t split "Others"')
+        return None
+
+
 class RylanFlowApp(rumps.App):
     def __init__(self, config: Config | None = None, store: Store | None = None) -> None:
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
@@ -125,6 +138,7 @@ class RylanFlowApp(rumps.App):
             self._transcriber,
             my_display_name(),
             calendar_lookup=_build_calendar_lookup(),
+            diarizer=_build_diarizer(),
         )
         self._meeting_was_active = False
         self._meeting_detector = MeetingDetector()
