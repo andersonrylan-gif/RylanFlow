@@ -43,7 +43,16 @@ BROWSER_OWNER_NAMES = {
     "Firefox",
     "Brave Browser",
 }
-MEETING_TITLE_MARKERS = ("Meet -", "Google Meet", "Zoom", "Microsoft Teams", "Webex")
+# Maps a window-title substring to the friendly service name reported as the meeting's
+# source_app -- "Google Meet" is far more useful on a dashboard card than "Google Chrome" (the
+# browser is almost never the thing worth naming the meeting after).
+MEETING_TITLE_LABELS = {
+    "Meet -": "Google Meet",
+    "Google Meet": "Google Meet",
+    "Zoom": "Zoom",
+    "Microsoft Teams": "Microsoft Teams",
+    "Webex": "Webex",
+}
 
 
 @dataclasses.dataclass
@@ -71,8 +80,11 @@ def _looks_like_a_meeting(mic_bundle_ids: set, window_titles: list) -> tuple[boo
         for prefix in BROWSER_BUNDLE_PREFIXES
     ):
         for owner, title in window_titles:
-            if owner in BROWSER_OWNER_NAMES and any(m in title for m in MEETING_TITLE_MARKERS):
-                return True, owner
+            if owner not in BROWSER_OWNER_NAMES:
+                continue
+            for marker, label in MEETING_TITLE_LABELS.items():
+                if marker in title:
+                    return True, label
 
     return False, None
 

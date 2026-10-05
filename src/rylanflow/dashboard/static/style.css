@@ -380,6 +380,29 @@ select {
   margin-right: 8px;
 }
 
+.transcript-speaker[data-speaker-id] {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: -4px;
+}
+
+.transcript-speaker[data-speaker-id]:hover {
+  background: var(--bg);
+  text-decoration: underline;
+}
+
+.speaker-rename-input {
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 4px;
+  width: 140px;
+}
+
 .transcript-time {
   font-size: 12px;
   color: var(--text-dim);

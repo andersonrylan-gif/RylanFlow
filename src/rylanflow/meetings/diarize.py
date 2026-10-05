@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from rylanflow.meetings import speakers
 from rylanflow.store import data_dir
 
 log = logging.getLogger(__name__)
@@ -33,8 +34,18 @@ EMBEDDING_URL = (
 EMBEDDING_SHA256 = "ad4a1802485d8b34c722d2a9d04249662f2ece5d28a7a039063ca22f515a789e"
 
 # The library's own default (0.5) over-segmented a real 9-person meeting into 12 clusters;
-# 0.6 matched the true speaker count exactly (see docs/decisions/0004-diarization.md).
-DEFAULT_CLUSTERING_THRESHOLD = 0.6
+# 0.6 matched the true speaker count on that one. But a real 28-minute, multi-speaker meeting
+# showed this doesn't generalize: even at 0.8 there was a long tail of 20+ spurious "speakers"
+# under a few seconds each, while the real speakers' durations stayed stable across every
+# threshold tried. Raised to 0.7 as a moderate improvement, paired with MIN_SPEAKER_DURATION_S
+# below to actually clear out that tail regardless of threshold (see docs/decisions/
+# 0004-diarization.md).
+DEFAULT_CLUSTERING_THRESHOLD = 0.7
+
+# Any speaker whose total talk time across the whole recording is under this gets merged into
+# whichever other speaker is temporally nearest (meetings.speakers.merge_short_speakers) -- a
+# few seconds of total talk time is almost always a clustering artifact, not a real participant.
+MIN_SPEAKER_DURATION_S = 15.0
 
 
 def _sha256(path: Path) -> str:
@@ -126,12 +137,15 @@ class Diarizer:
         return sherpa_onnx.OfflineSpeakerDiarization(config)
 
     def diarize(self, wav_path: Path) -> list[tuple[float, float, int]]:
-        """(start, end, speaker_index) turns, sorted by start time. Speaker indices are 0-based
-        and only meaningful within this one call's result."""
+        """(start, end, speaker_index) turns, sorted by start time, with spurious short-lived
+        "speakers" already merged into their nearest real neighbor (see
+        MIN_SPEAKER_DURATION_S). Speaker indices are 0-based and only meaningful within this
+        one call's result."""
         samples = _read_wav_samples(wav_path)
         if samples.size == 0:
             return []
         if self._diarization is None:
             self._diarization = self._build()
         result = self._diarization.process(samples)
-        return [(seg.start, seg.end, seg.speaker) for seg in result.sort_by_start_time()]
+        turns = [(seg.start, seg.end, seg.speaker) for seg in result.sort_by_start_time()]
+        return speakers.merge_short_speakers(turns, MIN_SPEAKER_DURATION_S)

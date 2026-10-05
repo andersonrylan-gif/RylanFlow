@@ -254,6 +254,49 @@ def test_export_meeting_requires_token(server):
     assert code == 403
 
 
+def test_rename_speaker(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    speaker_id = store.add_speaker(meeting_id, "Speaker 1")
+    status, data = _request(
+        f"{_base(url)}api/speakers/{speaker_id}",
+        token=srv.token,
+        method="PATCH",
+        body={"display_name": "Sarah"},
+    )
+    assert status == 200
+    assert data == {"ok": True}
+    meeting = store.get_meeting(meeting_id)
+    speaker = next(s for s in meeting["speakers"] if s["id"] == speaker_id)
+    assert speaker["display_name"] == "Sarah"
+
+
+def test_rename_speaker_requires_token(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    speaker_id = store.add_speaker(meeting_id, "Speaker 1")
+    code = _request_expect_error(
+        f"{_base(url)}api/speakers/{speaker_id}",
+        token=None,
+        method="PATCH",
+        body={"display_name": "Sarah"},
+    )
+    assert code == 403
+
+
+def test_rename_speaker_rejects_an_empty_name(server):
+    srv, store, _actions, url = server
+    meeting_id = store.create_meeting(title="Standup")
+    speaker_id = store.add_speaker(meeting_id, "Speaker 1")
+    code = _request_expect_error(
+        f"{_base(url)}api/speakers/{speaker_id}",
+        token=srv.token,
+        method="PATCH",
+        body={"display_name": "   "},
+    )
+    assert code == 400
+
+
 def test_get_meeting_includes_speakers_and_segments(server):
     srv, store, _actions, url = server
     meeting_id = store.create_meeting(title="Standup")
