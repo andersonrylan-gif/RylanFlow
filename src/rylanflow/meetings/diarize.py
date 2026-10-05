@@ -109,6 +109,45 @@ def _read_wav_samples(path: Path) -> np.ndarray:
     return pcm.astype(np.float32) / 32768.0
 
 
+def read_wav_window(path: Path, start_s: float, end_s: float) -> np.ndarray:
+    """The 16kHz mono float32 samples between start_s and end_s -- used to pull just one
+    speaker's audio out of a meeting's WAV for voice-print extraction."""
+    with wave.open(str(path), "rb") as f:
+        rate = f.getframerate()
+        f.setpos(max(0, int(start_s * rate)))
+        n_frames = max(0, int((end_s - start_s) * rate))
+        pcm = np.frombuffer(f.readframes(n_frames), dtype=np.int16)
+    return pcm.astype(np.float32) / 32768.0
+
+
+# How much audio (seconds) is enough for a stable voice-print -- more than this just slows
+# embedding extraction down for no real gain.
+MAX_VOICE_SAMPLE_S = 20.0
+
+
+def concat_audio_for_turns(
+    wav_path: Path, turns: list[tuple[float, float]], max_duration: float = MAX_VOICE_SAMPLE_S
+) -> np.ndarray | None:
+    """Reads up to `max_duration` seconds of this speaker's audio out of `wav_path`, preferring
+    their longest turns first -- a handful of solid turns gives a cleaner voice-print than many
+    short, noisy ones. None if `turns` is empty or none of it could be read."""
+    if not turns:
+        return None
+    longest_first = sorted(turns, key=lambda t: t[1] - t[0], reverse=True)
+    chunks = []
+    total = 0.0
+    for start, end in longest_first:
+        if total >= max_duration:
+            break
+        chunk = read_wav_window(wav_path, start, min(end, start + (max_duration - total)))
+        if chunk.size:
+            chunks.append(chunk)
+            total += chunk.size / 16000
+    if not chunks:
+        return None
+    return np.concatenate(chunks)
+
+
 class Diarizer:
     """Create one (cheap -- no model loading yet), call diarize(wav_path) after a meeting ends.
     The sherpa-onnx pipeline and its models are built lazily on the first call, so constructing
@@ -117,6 +156,29 @@ class Diarizer:
     def __init__(self, threshold: float = DEFAULT_CLUSTERING_THRESHOLD) -> None:
         self._threshold = threshold
         self._diarization = None
+        self._embedding_extractor = None
+
+    def _build_embedding_extractor(self):
+        import sherpa_onnx
+
+        embedding_model = ensure_embedding_model()
+        config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(embedding_model))
+        return sherpa_onnx.SpeakerEmbeddingExtractor(config)
+
+    def embed(self, samples: np.ndarray) -> list[float] | None:
+        """A voice-print for this audio (16kHz mono float32, [-1, 1]), used both to learn a
+        newly-named speaker's voice and to recognize them in future meetings (see
+        meetings.speakers.match_voice). None if there isn't enough audio to extract one from."""
+        if samples.size == 0:
+            return None
+        if self._embedding_extractor is None:
+            self._embedding_extractor = self._build_embedding_extractor()
+        stream = self._embedding_extractor.create_stream()
+        stream.accept_waveform(sample_rate=16000, waveform=samples)
+        stream.input_finished()
+        if not self._embedding_extractor.is_ready(stream):
+            return None
+        return list(self._embedding_extractor.compute(stream))
 
     def _build(self):
         import sherpa_onnx

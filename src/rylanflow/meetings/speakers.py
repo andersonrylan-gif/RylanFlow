@@ -6,12 +6,19 @@ produce those turns) lives in meetings/diarize.py.
 """
 
 import difflib
+import math
 
 import numpy as np
 
 ECHO_OVERLAP_FRACTION = 0.5  # how much of the mic segment must overlap a system one
 ECHO_TEXT_SIMILARITY = 0.6  # how similar the words have to be, 0..1 (difflib ratio)
 SILENCE_RMS_THRESHOLD = 0.01  # mic audio quieter than this isn't worth transcribing at all
+
+# Measured against real meeting audio (two confirmed-same-person windows, two confirmed-
+# different-person windows): same-speaker similarity landed around 0.44-0.66, different-speaker
+# around 0.04-0.24. Set conservatively high within that gap -- a missed match just falls back to
+# "Speaker N" (safe), while a wrong match would mislabel a stranger with someone else's name.
+VOICE_MATCH_THRESHOLD = 0.5
 
 
 def is_silent(audio: np.ndarray, threshold: float = SILENCE_RMS_THRESHOLD) -> bool:
@@ -109,3 +116,29 @@ def assign(segments: list[dict], turns: list[tuple[float, float, int]]) -> dict[
                 best_distance = distance
         assignments[seg["id"]] = best_speaker
     return assignments
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def match_voice(
+    embedding: list[float], known_voices: list[dict], threshold: float = VOICE_MATCH_THRESHOLD
+) -> str | None:
+    """The name of whichever known voice this embedding resembles most, by cosine similarity,
+    or None if nothing clears `threshold` -- the caller should fall back to "Speaker N" rather
+    than guess. `known_voices` is [{"name": str, "embedding": list[float]}, ...], matching
+    store.list_voices()'s shape."""
+    best_name = None
+    best_similarity = threshold
+    for voice in known_voices:
+        similarity = _cosine_similarity(embedding, voice["embedding"])
+        if similarity > best_similarity:
+            best_similarity = similarity
+            best_name = voice["name"]
+    return best_name

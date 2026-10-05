@@ -25,7 +25,7 @@ from datetime import datetime
 from rylanflow.meetings import speakers
 from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.chunker import Chunker
-from rylanflow.meetings.diarize import Diarizer
+from rylanflow.meetings.diarize import Diarizer, concat_audio_for_turns
 from rylanflow.meetings.mic_track import MicTrack
 from rylanflow.meetings.system_audio import SystemAudioTrack
 from rylanflow.store import Store, data_dir
@@ -227,15 +227,20 @@ class MeetingSession:
         if not system_segments:
             return
         self._store.finish_meeting(meeting_id, "processing")
+        wav_path = data_dir() / "meetings" / str(meeting_id) / "system.wav"
         try:
-            meeting_dir = data_dir() / "meetings" / str(meeting_id)
-            turns = self._diarizer.diarize(meeting_dir / "system.wav")
+            turns = self._diarizer.diarize(wav_path)
             turn_by_segment = speakers.assign(system_segments, turns)
         except Exception:
             log.exception("meeting %s: diarization failed", meeting_id)
             return
         if not turn_by_segment:
             return
+
+        turns_by_speaker: dict[int, list[tuple[float, float]]] = {}
+        for start, end, turn_index in turns:
+            turns_by_speaker.setdefault(turn_index, []).append((start, end))
+        known_voices = self._store.list_voices()
 
         speaker_ids: dict[int, int] = {}
         reassignments: dict[int, int] = {}
@@ -248,8 +253,11 @@ class MeetingSession:
                 # onnx's cluster ids aren't guaranteed sequential/compact (e.g. 0, 1, 5, 13 for
                 # 4 speakers), which would otherwise show up as "Speaker 1", "Speaker 14", ....
                 speaker_number = len(speaker_ids) + 1
+                matched_name = self._recognize_voice(
+                    meeting_id, wav_path, turns_by_speaker.get(turn_index, []), known_voices
+                )
                 speaker_ids[turn_index] = self._store.add_speaker(
-                    meeting_id, f"Speaker {speaker_number}"
+                    meeting_id, f"Speaker {speaker_number}", display_name=matched_name
                 )
             reassignments[seg["id"]] = speaker_ids[turn_index]
         self._store.reassign_segments(reassignments)
@@ -257,6 +265,31 @@ class MeetingSession:
         others = next((s for s in meeting["speakers"] if s["label"] == "Others"), None)
         if others is not None:
             self._store.delete_speaker(others["id"])
+
+    def _recognize_voice(
+        self,
+        meeting_id: int,
+        wav_path,
+        turns: list[tuple[float, float]],
+        known_voices: list[dict],
+    ) -> str | None:
+        """Best-effort: if this speaker's voice matches someone named in a previous meeting (see
+        meetings/speakers.py's VOICE_MATCH_THRESHOLD), returns their name so the dashboard shows
+        it right away instead of "Speaker N". None on no match or any failure -- this must never
+        block the meeting from finishing."""
+        if not known_voices or self._diarizer is None:
+            return None
+        try:
+            audio = concat_audio_for_turns(wav_path, turns)
+            if audio is None:
+                return None
+            embedding = self._diarizer.embed(audio)
+            if embedding is None:
+                return None
+            return speakers.match_voice(embedding, known_voices)
+        except Exception:
+            log.exception("meeting %s: voice matching failed for a speaker", meeting_id)
+            return None
 
     def _wait_for_pending(self, timeout: float) -> bool:
         deadline = self._clock() + timeout
