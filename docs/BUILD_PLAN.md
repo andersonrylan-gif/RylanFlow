@@ -411,10 +411,9 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
     - Handle sleep and lid close: on `NSWorkspaceWillSleepNotification`, stop the meeting cleanly.
   - **Done when:** checked by hand in the dashboard.
 
-- [ ] **3.9 (Optional) Voice memory.**
-  - After a speaker is renamed, store that speaker's mean embedding (sherpa `SpeakerEmbeddingExtractor`) in a `voices(name, embedding BLOB, updated_at)` table.
-  - In later meetings, auto-name clusters whose cosine similarity is at least 0.7 (shown as "Name?" until the owner confirms).
-  - Only do this if 3.5 quality is good.
+- [x] **3.9 (Optional) Voice memory.**
+  - After a speaker is renamed, store that speaker's embedding (sherpa `SpeakerEmbeddingExtractor`) in a `voices(name, embedding_json, updated_at)` table.
+  - In later meetings, auto-name clusters whose cosine similarity to a remembered voice is at least 0.5 (threshold picked from real measured same/different-person similarity, see the PR for #95), shown immediately rather than "Name?" pending confirmation -- a missed match safely falls back to "Speaker N".
 
 - [ ] **3.10 Release v0.3.0.**
   - **Do:**

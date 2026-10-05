@@ -41,6 +41,7 @@ class Actions(Protocol):
     def apply_settings(self, changes: dict) -> None: ...
     def start_meeting(self) -> int: ...
     def stop_meeting(self) -> int | None: ...
+    def learn_voice(self, speaker_id: int, display_name: str) -> None: ...
 
 
 class DashboardServer:
@@ -255,11 +256,20 @@ def _make_handler(
                 self._deny()
                 return
             if match := _SPEAKER_PATH.fullmatch(self.path):
+                speaker_id = int(match.group(1))
                 display_name = self._read_json().get("display_name", "").strip()
                 if not display_name:
                     self._deny(HTTPStatus.BAD_REQUEST)
                     return
-                store.rename_speaker(int(match.group(1)), display_name)
+                store.rename_speaker(speaker_id, display_name)
+                # Voice-learning reads audio and runs the embedding model, which can take a
+                # few seconds -- don't make the rename's response wait on it.
+                threading.Thread(
+                    target=actions.learn_voice,
+                    args=(speaker_id, display_name),
+                    name="learn-voice",
+                    daemon=True,
+                ).start()
                 self._json(HTTPStatus.OK, {"ok": True})
             else:
                 self._deny(HTTPStatus.NOT_FOUND)

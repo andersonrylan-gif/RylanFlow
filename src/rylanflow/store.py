@@ -80,6 +80,16 @@ _MIGRATIONS: list[str] = [
         INSERT INTO segments_fts(segments_fts, rowid, text) VALUES ('delete', old.id, old.text);
     END;
     """,
+    # v4: remembered voice prints, so a speaker named once in the dashboard can be
+    # auto-recognized by voice in future meetings (meetings/speakers.match_voice).
+    """
+    CREATE TABLE voices (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        embedding_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -306,6 +316,13 @@ class Store:
             )
             self._conn.commit()
 
+    def get_speaker(self, speaker_id: int) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM speakers WHERE id = ?", (speaker_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
     def delete_speaker(self, speaker_id: int) -> None:
         with self._lock:
             self._conn.execute("DELETE FROM speakers WHERE id = ?", (speaker_id,))
@@ -340,6 +357,24 @@ class Store:
                 [(speaker_id, segment_id) for segment_id, speaker_id in assignments.items()],
             )
             self._conn.commit()
+
+    # --- voices (remembered voice prints, step 3.9) ---
+
+    def save_voice(self, name: str, embedding: list[float]) -> None:
+        """Upserts by name -- naming the same person again just updates their stored voice."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO voices (name, embedding_json, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET "
+                "embedding_json = excluded.embedding_json, updated_at = excluded.updated_at",
+                (name, json.dumps(embedding), _now_iso(self._clock)),
+            )
+            self._conn.commit()
+
+    def list_voices(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute("SELECT name, embedding_json FROM voices").fetchall()
+            return [{"name": r["name"], "embedding": json.loads(r["embedding_json"])} for r in rows]
 
 
 def _meeting_dict(row: sqlite3.Row) -> dict:

@@ -1,6 +1,14 @@
 import numpy as np
+import pytest
 
-from rylanflow.meetings.speakers import assign, is_echo, is_silent, merge_short_speakers
+from rylanflow.meetings.speakers import (
+    _cosine_similarity,
+    assign,
+    is_echo,
+    is_silent,
+    match_voice,
+    merge_short_speakers,
+)
 
 SAMPLE_RATE = 16_000
 
@@ -162,3 +170,39 @@ def test_merge_short_speakers_with_everything_short_changes_nothing():
 def test_merge_short_speakers_exactly_at_the_threshold_counts_as_real():
     turns = [(0.0, 5.0, 0), (5.0, 15.0, 1)]
     assert merge_short_speakers(turns, min_total_duration=5.0) == turns
+
+
+# --- _cosine_similarity / match_voice ---
+
+
+def test_cosine_similarity_of_identical_vectors_is_one():
+    assert _cosine_similarity([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == pytest.approx(1.0)
+
+
+def test_cosine_similarity_of_orthogonal_vectors_is_zero():
+    assert _cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_cosine_similarity_of_opposite_vectors_is_negative_one():
+    assert _cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
+
+
+def test_cosine_similarity_with_a_zero_vector_is_zero():
+    assert _cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+
+
+def test_match_voice_picks_the_most_similar_known_voice():
+    known = [
+        {"name": "Alice", "embedding": [1.0, 0.0]},
+        {"name": "Bob", "embedding": [0.0, 1.0]},
+    ]
+    assert match_voice([0.9, 0.1], known) == "Alice"
+
+
+def test_match_voice_returns_none_below_the_threshold():
+    known = [{"name": "Alice", "embedding": [1.0, 0.0]}]
+    assert match_voice([0.0, 1.0], known, threshold=0.5) is None
+
+
+def test_match_voice_returns_none_with_no_known_voices():
+    assert match_voice([1.0, 0.0], []) is None

@@ -21,13 +21,13 @@ from rylanflow.meeting_indicator import MeetingIndicator
 from rylanflow.meetings import detector
 from rylanflow.meetings.calendar import CalendarLookup
 from rylanflow.meetings.detector_logic import MeetingDetector, Start, Stop
-from rylanflow.meetings.diarize import Diarizer
+from rylanflow.meetings.diarize import Diarizer, concat_audio_for_turns
 from rylanflow.meetings.session import MeetingSession
 from rylanflow.overlay import Overlay
 from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
-from rylanflow.store import Store
+from rylanflow.store import Store, data_dir
 from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
 from rylanflow.transcription_service import TranscriptionService
 
@@ -132,13 +132,16 @@ class RylanFlowApp(rumps.App):
         )
         self._restarting = False
 
+        # Kept directly (not just handed to MeetingSession) so learn_voice below can reuse the
+        # same loaded models instead of building a second embedding extractor.
+        self._diarizer = _build_diarizer()
         self._meeting_session = MeetingSession(
             self._store,
             self._transcription_service,
             self._transcriber,
             my_display_name(),
             calendar_lookup=_build_calendar_lookup(),
-            diarizer=_build_diarizer(),
+            diarizer=self._diarizer,
         )
         self._meeting_was_active = False
         self._meeting_detector = MeetingDetector()
@@ -344,6 +347,37 @@ class RylanFlowApp(rumps.App):
     def stop_meeting(self) -> int | None:
         self._meeting_detector.note_external_stop()
         return self._meeting_session.stop()
+
+    def learn_voice(self, speaker_id: int, display_name: str) -> None:
+        """Best-effort: remembers this speaker's voice under `display_name`, so
+        meetings.speakers.match_voice can recognize them automatically in a future meeting
+        instead of needing another manual rename. Runs on a background thread the dashboard
+        spawns after a rename, so any failure here must stay invisible to the user -- it just
+        means the next meeting falls back to "Speaker N" for them, same as before this existed."""
+        if self._diarizer is None:
+            return
+        try:
+            speaker = self._store.get_speaker(speaker_id)
+            if speaker is None or speaker["is_me"]:
+                return  # "You" is always the owner, not someone to recognize across meetings
+            meeting = self._store.get_meeting(speaker["meeting_id"])
+            if meeting is None:
+                return
+            turns = [
+                (s["start_s"], s["end_s"])
+                for s in meeting["segments"]
+                if s["speaker_id"] == speaker_id and s["track"] == "system"
+            ]
+            wav_path = data_dir() / "meetings" / str(speaker["meeting_id"]) / "system.wav"
+            audio = concat_audio_for_turns(wav_path, turns)
+            if audio is None:
+                return
+            embedding = self._diarizer.embed(audio)
+            if embedding is None:
+                return
+            self._store.save_voice(display_name, embedding)
+        except Exception:
+            log.exception("could not learn %s's voice", display_name)
 
     def _watch_for_sleep(self) -> None:
         """Stop an active meeting cleanly when the Mac is about to sleep (lid close, Apple menu

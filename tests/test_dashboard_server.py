@@ -1,4 +1,5 @@
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -14,6 +15,7 @@ class FakeActions:
         self.applied = []
         self._store = store
         self._active_meeting_id: int | None = None
+        self.learned_voices: list[tuple[int, str]] = []
 
     def get_settings(self):
         return dict(self.settings)
@@ -34,6 +36,9 @@ class FakeActions:
             self._store.finish_meeting(meeting_id, "done")
             self._active_meeting_id = None
         return meeting_id
+
+    def learn_voice(self, speaker_id, display_name):
+        self.learned_voices.append((speaker_id, display_name))
 
 
 @pytest.fixture
@@ -255,7 +260,7 @@ def test_export_meeting_requires_token(server):
 
 
 def test_rename_speaker(server):
-    srv, store, _actions, url = server
+    srv, store, actions, url = server
     meeting_id = store.create_meeting(title="Standup")
     speaker_id = store.add_speaker(meeting_id, "Speaker 1")
     status, data = _request(
@@ -269,6 +274,12 @@ def test_rename_speaker(server):
     meeting = store.get_meeting(meeting_id)
     speaker = next(s for s in meeting["speakers"] if s["id"] == speaker_id)
     assert speaker["display_name"] == "Sarah"
+
+    # Voice-learning runs on a background thread, fired off right after the rename.
+    deadline = time.monotonic() + 3.0
+    while not actions.learned_voices and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert actions.learned_voices == [(speaker_id, "Sarah")]
 
 
 def test_rename_speaker_requires_token(server):
