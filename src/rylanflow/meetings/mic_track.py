@@ -25,6 +25,13 @@ from rylanflow.recorder import (
 
 log = logging.getLogger(__name__)
 
+# Opening the mic right as a call starts can race another app's virtual audio device
+# reconfiguring the input graph (e.g. Krisp's noise-cancelling mic) -- PortAudio surfaces that
+# as a generic "Internal PortAudio error" rather than anything retry-aware itself. A short
+# retry gives that race a chance to clear instead of failing the whole meeting outright.
+MIC_OPEN_RETRIES = 3
+MIC_OPEN_RETRY_DELAY = 0.5
+
 
 class MicTrack:
     """Captures the user's own voice continuously for the length of a meeting."""
@@ -89,8 +96,20 @@ class MicTrack:
             log.exception("writing mic track audio to disk failed")
 
     def _open(self) -> sd.InputStream:
-        stream = sd.InputStream(
-            samplerate=self.sample_rate, channels=1, dtype="float32", callback=self._on_audio
-        )
-        stream.start()
-        return stream
+        for attempt in range(1, MIC_OPEN_RETRIES + 1):
+            try:
+                stream = sd.InputStream(
+                    samplerate=self.sample_rate,
+                    channels=1,
+                    dtype="float32",
+                    callback=self._on_audio,
+                )
+                stream.start()
+                return stream
+            except sd.PortAudioError:
+                if attempt == MIC_OPEN_RETRIES:
+                    raise
+                log.warning(
+                    "mic track open attempt %d/%d failed, retrying", attempt, MIC_OPEN_RETRIES
+                )
+                time.sleep(MIC_OPEN_RETRY_DELAY)
