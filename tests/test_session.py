@@ -469,3 +469,34 @@ def test_diarization_with_no_system_segments_is_never_invoked(tmp_path):
         assert diarizer.calls == []
     finally:
         service.stop()
+
+
+def test_back_to_back_meetings_do_not_corrupt_each_other(tmp_path):
+    # Regression test: stopping meeting A and immediately starting meeting B (the "marathon of
+    # back-to-back meetings" case) used to let A's still-running background cleanup operate on
+    # B's mic/system tracks instead of its own, since they were read off shared `self.` state
+    # rather than captured per-meeting.
+    session, store, service, mic_tracks, _system_tracks = make_session(tmp_path)
+    try:
+        meeting_a = session.start()
+        assert wait_for(lambda: mic_tracks and mic_tracks[0].started)
+        mic_tracks[0].feed(LOUD)
+
+        session.stop()  # A's background cleanup starts running concurrently from here on
+        meeting_b = session.start()
+        assert meeting_b != meeting_a
+        assert wait_for(lambda: len(mic_tracks) == 2 and mic_tracks[1].started, timeout=5.0)
+
+        # Give A's cleanup time to finish; it must never touch B's track.
+        time.sleep(1.0)
+        assert not mic_tracks[1].closed, "meeting B's mic track was closed by meeting A's cleanup"
+
+        mic_tracks[1].feed(LOUD)
+        session.stop()
+
+        assert wait_for(lambda: store.get_meeting(meeting_a)["status"] == "done", timeout=5.0)
+        assert wait_for(lambda: store.get_meeting(meeting_b)["status"] == "done", timeout=5.0)
+        assert len(store.get_meeting(meeting_a)["segments"]) == 1
+        assert len(store.get_meeting(meeting_b)["segments"]) == 1
+    finally:
+        service.stop()

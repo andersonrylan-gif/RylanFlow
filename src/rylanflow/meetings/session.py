@@ -6,12 +6,20 @@ Threading: start() and stop() are both non-blocking (like Recorder.stop()/track.
 elsewhere in this codebase) -- opening the audio hardware and waiting for queued transcriptions
 to finish can both take a few seconds, which would freeze the UI if done on the caller's thread.
 Both do their real work on a background thread instead.
+
+Each meeting's mutable state (tracks, chunkers, events, ...) lives in a fresh _Active instance,
+passed explicitly through every background method -- never read back off `self` from inside a
+background thread. Back-to-back meetings (stop() immediately followed by start(), which a busy
+day of consecutive calls does routinely) would otherwise let meeting A's still-running cleanup
+thread read `self._mic` etc. after start() had already overwritten them for meeting B, silently
+closing B's hardware out from under it or misattributing B's audio to A's transcript.
 """
 
 import logging
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from rylanflow.meetings import speakers
@@ -31,6 +39,23 @@ STOP_DRAIN_TIMEOUT = 20.0  # how long to wait for the last queued chunks before 
 _TAG = "meeting"
 _MIC_TRACK = "mic"
 _SYSTEM_TRACK = "system"
+
+
+@dataclass
+class _Active:
+    """Everything specific to one in-progress meeting. See the module docstring for why this
+    isn't just more `self.` attributes."""
+
+    mic: MicTrack
+    system: SystemAudioTrack
+    you_id: int
+    others_id: int
+    on_error: Callable[[str], None] | None
+    mic_chunker: Chunker = field(default_factory=Chunker)
+    system_chunker: Chunker = field(default_factory=Chunker)
+    stop_event: threading.Event = field(default_factory=threading.Event)
+    started_event: threading.Event = field(default_factory=threading.Event)
+    pump_thread: threading.Thread | None = None
 
 
 class MeetingSession:
@@ -62,16 +87,7 @@ class MeetingSession:
         self._diarizer = diarizer
 
         self._meeting_id: int | None = None
-        self._you_id: int | None = None
-        self._others_id: int | None = None
-        self._mic = None
-        self._system = None
-        self._mic_chunker = Chunker()
-        self._system_chunker = Chunker()
-        self._stop_event = threading.Event()
-        self._pump_thread: threading.Thread | None = None
-        self._started_event = threading.Event()  # set once startup finishes, success or not
-        self._on_error: Callable[[str], None] | None = None
+        self._active: _Active | None = None
 
     @property
     def active(self) -> bool:
@@ -92,26 +108,28 @@ class MeetingSession:
         that can take a few seconds."""
         if self.active:
             return self._meeting_id
-        self._on_error = on_error
-        self._meeting_id = self._store.create_meeting(title=title, source_app=source_app)
-        self._you_id = self._store.add_speaker(
-            self._meeting_id, "You", display_name=self._my_name, is_me=True
-        )
-        self._others_id = self._store.add_speaker(self._meeting_id, "Others")
+        meeting_id = self._store.create_meeting(title=title, source_app=source_app)
+        you_id = self._store.add_speaker(meeting_id, "You", display_name=self._my_name, is_me=True)
+        others_id = self._store.add_speaker(meeting_id, "Others")
 
-        meeting_dir = data_dir() / "meetings" / str(self._meeting_id)
-        self._mic = self._mic_track_factory(meeting_dir / "mic.wav")
-        self._system = self._system_track_factory(meeting_dir / "system.wav")
-        self._mic_chunker = Chunker()
-        self._system_chunker = Chunker()
-        self._pump_thread = None
-        self._stop_event.clear()
-        self._started_event.clear()
+        meeting_dir = data_dir() / "meetings" / str(meeting_id)
+        active = _Active(
+            mic=self._mic_track_factory(meeting_dir / "mic.wav"),
+            system=self._system_track_factory(meeting_dir / "system.wav"),
+            you_id=you_id,
+            others_id=others_id,
+            on_error=on_error,
+        )
+        self._meeting_id = meeting_id
+        self._active = active
 
         threading.Thread(
-            target=self._start_tracks_and_pump, name="meeting-start", daemon=True
+            target=self._start_tracks_and_pump,
+            args=(meeting_id, active),
+            name="meeting-start",
+            daemon=True,
         ).start()
-        return self._meeting_id
+        return meeting_id
 
     def stop(self) -> int | None:
         """Signals the meeting to stop and returns its id at once. Closing the tracks, flushing
@@ -120,32 +138,35 @@ class MeetingSession:
         if not self.active:
             return None
         meeting_id = self._meeting_id
+        active = self._active
         self._meeting_id = None
-        self._stop_event.set()
+        self._active = None
+        active.stop_event.set()
         threading.Thread(
-            target=self._finish_stop, args=(meeting_id,), name="meeting-stop", daemon=True
+            target=self._finish_stop, args=(meeting_id, active), name="meeting-stop", daemon=True
         ).start()
         return meeting_id
 
     # --- background: starting ---
 
-    def _start_tracks_and_pump(self) -> None:
-        meeting_id = self._meeting_id
+    def _start_tracks_and_pump(self, meeting_id: int, active: _Active) -> None:
         try:
-            self._mic.start()
-            self._system.start()
+            active.mic.start()
+            active.system.start()
         except Exception:
             log.exception("could not start meeting capture")
-            self._store.finish_meeting(self._meeting_id, "failed")
-            self._meeting_id = None
-            self._error("Couldn't start capturing the meeting. See the log for details.")
-            self._started_event.set()
+            self._store.finish_meeting(meeting_id, "failed")
+            if self._meeting_id == meeting_id:
+                self._meeting_id = None
+                self._active = None
+            self._error(active, "Couldn't start capturing the meeting. See the log for details.")
+            active.started_event.set()
             return
-        self._pump_thread = threading.Thread(
-            target=self._pump_loop, name="meeting-pump", daemon=True
+        active.pump_thread = threading.Thread(
+            target=self._pump_loop, args=(meeting_id, active), name="meeting-pump", daemon=True
         )
-        self._pump_thread.start()
-        self._started_event.set()
+        active.pump_thread.start()
+        active.started_event.set()
         self._apply_calendar_info(meeting_id)
 
     def _apply_calendar_info(self, meeting_id: int) -> None:
@@ -166,28 +187,25 @@ class MeetingSession:
         if event.attendees:
             self._store.set_meeting_attendees(meeting_id, event.attendees)
 
-    def _pump_loop(self) -> None:
-        # Captured once: stop() clears self._meeting_id (for the `active` property) separately
-        # from this loop's own lifecycle, and every chunk this loop submits belongs to this id.
-        meeting_id = self._meeting_id
-        while not self._stop_event.wait(PUMP_INTERVAL):
-            self._process_both(meeting_id)
+    def _pump_loop(self, meeting_id: int, active: _Active) -> None:
+        while not active.stop_event.wait(PUMP_INTERVAL):
+            self._process_both(meeting_id, active)
 
     # --- background: stopping ---
 
-    def _finish_stop(self, meeting_id: int) -> None:
+    def _finish_stop(self, meeting_id: int, active: _Active) -> None:
         # Don't race ahead of _start_tracks_and_pump: wait for it to finish setting up (success
-        # or failure) before touching self._pump_thread or the tracks at all. Safe to wait
+        # or failure) before touching active.pump_thread or the tracks at all. Safe to wait
         # unbounded -- mic.start()/system.start() each have their own internal timeouts, so
-        # _started_event is always eventually set.
-        self._started_event.wait()
-        if self._pump_thread is not None:
-            self._pump_thread.join(timeout=PUMP_INTERVAL * 3)
-        self._mic.close()
-        self._system.close()
+        # started_event is always eventually set.
+        active.started_event.wait()
+        if active.pump_thread is not None:
+            active.pump_thread.join(timeout=PUMP_INTERVAL * 3)
+        active.mic.close()
+        active.system.close()
         # One last drain so nothing captured since the pump's last tick is lost, then flush
         # each chunker's remainder (however short) as a final window.
-        self._process_both(meeting_id, final=True)
+        self._process_both(meeting_id, active, final=True)
         if not self._wait_for_pending(STOP_DRAIN_TIMEOUT):
             log.warning(
                 "meeting %s: still-pending transcriptions after the stop timeout", meeting_id
@@ -250,16 +268,21 @@ class MeetingSession:
 
     # --- shared by the pump and the final stop-time drain ---
 
-    def _process_both(self, meeting_id: int, final: bool = False) -> None:
+    def _process_both(self, meeting_id: int, active: _Active, final: bool = False) -> None:
         # System audio is processed first, deliberately: since the shared TranscriptionService
         # has one worker thread, submitting system's chunk before mic's means system's result
         # (and thus its stored segment) is already available by the time the mic chunk's own
         # job -- and its echo check against system_segments -- runs, rather than racing it.
         self._process_track(
-            meeting_id, _SYSTEM_TRACK, self._system, self._system_chunker, self._others_id, final
+            meeting_id,
+            _SYSTEM_TRACK,
+            active.system,
+            active.system_chunker,
+            active.others_id,
+            final,
         )
         self._process_track(
-            meeting_id, _MIC_TRACK, self._mic, self._mic_chunker, self._you_id, final
+            meeting_id, _MIC_TRACK, active.mic, active.mic_chunker, active.you_id, final
         )
 
     def _process_track(
@@ -333,6 +356,6 @@ class MeetingSession:
         if rows:
             self._store.add_segments(meeting_id, rows)
 
-    def _error(self, message: str) -> None:
-        if self._on_error:
-            self._on_error(message)
+    def _error(self, active: _Active, message: str) -> None:
+        if active.on_error:
+            active.on_error(message)
