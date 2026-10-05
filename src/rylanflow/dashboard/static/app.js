@@ -222,6 +222,7 @@
   let meetingsCache = [];
   let currentMeetingId = null; // set while the detail view is open
   let currentMeetingsQuery = "";
+  let renamingSpeaker = false; // true while a speaker-rename <input> is open, so poll() leaves it alone
   const meetingConfirming = new Set();
 
   function showMeetingsList() {
@@ -349,9 +350,10 @@
         const speaker = bySpeaker[seg.speaker_id];
         const label = speaker ? speaker.display_name || speaker.label : "Unknown";
         const color = seg.speaker_id ? speakerColor(seg.speaker_id, meeting.speakers) : "#8e8e93";
+        const speakerAttr = seg.speaker_id ? ` data-speaker-id="${seg.speaker_id}"` : "";
         return `
           <div class="transcript-line">
-            <span class="transcript-speaker" style="color:${color}">${escapeHtml(label)}</span>
+            <span class="transcript-speaker"${speakerAttr} style="color:${color}">${escapeHtml(label)}</span>
             <span class="transcript-time">${mmss(seg.start_s)}</span>
             <div class="transcript-text">${escapeHtml(seg.text)}</div>
           </div>`;
@@ -367,9 +369,51 @@
     renderMeetingDetail(await api(`/api/meetings/${id}`));
   }
 
+  // Click a speaker's name to rename them (updates every line of theirs in the transcript).
+  // Uses an inline <input>, not window.prompt() -- prompt()/confirm() aren't reliably supported
+  // inside the native dashboard window's WKWebView.
+  document.getElementById("meeting-transcript").addEventListener("click", (e) => {
+    const target = e.target.closest(".transcript-speaker[data-speaker-id]");
+    if (!target || target.querySelector("input")) return;
+    const speakerId = Number(target.dataset.speakerId);
+    const currentName = target.textContent;
+
+    renamingSpeaker = true;
+    const input = document.createElement("input");
+    input.className = "speaker-rename-input";
+    input.value = currentName;
+    target.textContent = "";
+    target.appendChild(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const newName = input.value.trim();
+      if (save && newName && newName !== currentName) {
+        await api(`/api/speakers/${speakerId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ display_name: newName }),
+        });
+      }
+      renamingSpeaker = false;
+      renderMeetingDetail(await api(`/api/meetings/${currentMeetingId}`));
+    };
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") input.blur();
+      if (ev.key === "Escape") finish(false);
+    });
+    input.addEventListener("blur", () => finish(true));
+    input.addEventListener("click", (ev) => ev.stopPropagation());
+  });
+
   document.getElementById("meeting-back").addEventListener("click", showMeetingsList);
 
-  document.getElementById("meeting-copy-transcript").addEventListener("click", async () => {
+  const copyTranscriptButton = document.getElementById("meeting-copy-transcript");
+  copyTranscriptButton.addEventListener("click", async () => {
     const meeting = await api(`/api/meetings/${currentMeetingId}`);
     const bySpeaker = Object.fromEntries(meeting.speakers.map((s) => [s.id, s]));
     const text = meeting.segments
@@ -380,6 +424,13 @@
       })
       .join("\n");
     await api("/api/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const original = copyTranscriptButton.textContent;
+    copyTranscriptButton.textContent = "Copied ✓";
+    copyTranscriptButton.classList.add("copied");
+    setTimeout(() => {
+      copyTranscriptButton.textContent = original;
+      copyTranscriptButton.classList.remove("copied");
+    }, 1500);
   });
 
   document.getElementById("meeting-download").addEventListener("click", async () => {
@@ -401,7 +452,7 @@
     if (document.visibilityState !== "visible") return;
     const tasks = [];
     if (confirming.size === 0) tasks.push(refreshDictations(), refreshStats());
-    if (!views.meetings.hidden) {
+    if (!views.meetings.hidden && !renamingSpeaker) {
       tasks.push(
         currentMeetingId === null
           ? refreshMeetingsList()

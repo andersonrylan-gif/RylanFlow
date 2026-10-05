@@ -1,6 +1,6 @@
 import numpy as np
 
-from rylanflow.meetings.speakers import assign, is_echo, is_silent
+from rylanflow.meetings.speakers import assign, is_echo, is_silent, merge_short_speakers
 
 SAMPLE_RATE = 16_000
 
@@ -116,3 +116,49 @@ def test_assign_falls_back_to_the_nearest_turn_when_nothing_overlaps():
     # segment [10, 12) overlaps neither turn; turn 0's center (1.0) is closer than turn 1's (101.0)
     segments = [seg(1, 10.0, 12.0)]
     assert assign(segments, turns) == {1: 0}
+
+
+# --- merge_short_speakers ---
+
+
+def test_merge_short_speakers_with_no_turns():
+    assert merge_short_speakers([], min_total_duration=5.0) == []
+
+
+def test_merge_short_speakers_leaves_real_speakers_alone():
+    turns = [(0.0, 10.0, 0), (10.0, 20.0, 1)]
+    assert merge_short_speakers(turns, min_total_duration=5.0) == turns
+
+
+def test_merge_short_speakers_folds_a_brief_speaker_into_the_nearest_real_one():
+    # speaker 2 only ever talks for 1s total (two 0.5s blips) -- noise, gets merged away.
+    turns = [
+        (0.0, 10.0, 0),  # speaker 0: 10s, real
+        (10.0, 10.5, 2),  # speaker 2: 0.5s, noise, nearest to speaker 0's turn
+        (20.0, 30.0, 1),  # speaker 1: 10s, real
+        (30.5, 31.0, 2),  # speaker 2: another 0.5s blip, nearest to speaker 1's turn
+    ]
+    merged = merge_short_speakers(turns, min_total_duration=5.0)
+    assert merged == [
+        (0.0, 10.0, 0),
+        (10.0, 10.5, 0),  # merged into speaker 0 (nearer than speaker 1)
+        (20.0, 30.0, 1),
+        (30.5, 31.0, 1),  # merged into speaker 1 (nearer than speaker 0)
+    ]
+
+
+def test_merge_short_speakers_never_changes_timing_only_speaker_ids():
+    turns = [(0.0, 10.0, 0), (10.0, 10.5, 2)]
+    merged = merge_short_speakers(turns, min_total_duration=5.0)
+    assert [(s, e) for s, e, _ in merged] == [(s, e) for s, e, _ in turns]
+
+
+def test_merge_short_speakers_with_everything_short_changes_nothing():
+    # No speaker clears the bar -- nothing to merge into, so leave it all as-is.
+    turns = [(0.0, 1.0, 0), (1.0, 2.0, 1)]
+    assert merge_short_speakers(turns, min_total_duration=5.0) == turns
+
+
+def test_merge_short_speakers_exactly_at_the_threshold_counts_as_real():
+    turns = [(0.0, 5.0, 0), (5.0, 15.0, 1)]
+    assert merge_short_speakers(turns, min_total_duration=5.0) == turns

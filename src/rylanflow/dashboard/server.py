@@ -31,6 +31,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 _DICTATION_PATH = re.compile(r"/api/dictations/(\d+)")
 _MEETING_PATH = re.compile(r"/api/meetings/(\d+)")
 _MEETING_EXPORT_PATH = re.compile(r"/api/meetings/(\d+)/export\.md")
+_SPEAKER_PATH = re.compile(r"/api/speakers/(\d+)")
 
 
 class Actions(Protocol):
@@ -246,6 +247,20 @@ def _make_handler(
             if self.path == "/api/settings":
                 actions.apply_settings(self._read_json())
                 self._json(HTTPStatus.OK, actions.get_settings())
+            else:
+                self._deny(HTTPStatus.NOT_FOUND)
+
+        def do_PATCH(self) -> None:  # noqa: N802
+            if not self._host_ok() or not self._token_ok():
+                self._deny()
+                return
+            if match := _SPEAKER_PATH.fullmatch(self.path):
+                display_name = self._read_json().get("display_name", "").strip()
+                if not display_name:
+                    self._deny(HTTPStatus.BAD_REQUEST)
+                    return
+                store.rename_speaker(int(match.group(1)), display_name)
+                self._json(HTTPStatus.OK, {"ok": True})
             else:
                 self._deny(HTTPStatus.NOT_FOUND)
 

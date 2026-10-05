@@ -49,6 +49,43 @@ def is_echo(
     return False
 
 
+def merge_short_speakers(
+    turns: list[tuple[float, float, int]], min_total_duration: float
+) -> list[tuple[float, float, int]]:
+    """Merges any speaker whose total talk time across the whole recording is under
+    `min_total_duration` into whichever other (non-short) speaker is temporally nearest to each
+    of its turns. A few seconds of total talk time is almost always a clustering artifact (a
+    brief, hard-to-embed segment scattering into its own spurious cluster) rather than a
+    genuinely distinct person -- confirmed against a real 28-minute, multi-speaker meeting: even
+    at the clustering library's strictest reasonable threshold, the long tail of sub-few-second
+    "speakers" persisted while the real speakers' durations stayed stable across every
+    threshold. Returns a new list in the same (start, end, speaker_index) shape; only speaker
+    indices are ever changed, never the timing."""
+    if not turns:
+        return []
+    total_duration: dict[int, float] = {}
+    for start, end, speaker in turns:
+        total_duration[speaker] = total_duration.get(speaker, 0.0) + (end - start)
+
+    real_speakers = {s for s, duration in total_duration.items() if duration >= min_total_duration}
+    if not real_speakers:
+        # Everything is "short" (e.g. a very brief recording) -- nothing to merge into.
+        return turns
+
+    merged = []
+    for start, end, speaker in turns:
+        if speaker in real_speakers:
+            merged.append((start, end, speaker))
+            continue
+        center = (start + end) / 2
+        nearest = min(
+            (t for t in turns if t[2] in real_speakers),
+            key=lambda t: abs((t[0] + t[1]) / 2 - center),
+        )
+        merged.append((start, end, nearest[2]))
+    return merged
+
+
 def assign(segments: list[dict], turns: list[tuple[float, float, int]]) -> dict[int, int]:
     """Maps each segment's id to a 0-based speaker index: whichever diarization turn overlaps
     it the most, in seconds. If nothing overlaps at all (or two turns tie exactly), the nearest

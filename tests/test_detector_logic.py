@@ -59,12 +59,19 @@ def test_a_mute_toggle_within_the_stop_debounce_does_not_stop():
 
 
 def test_browser_with_a_meeting_title_starts_it():
+    # The reported app_name is the meeting service (from the window title), not the browser --
+    # "Google Meet" is far more useful on a dashboard card than "Google Chrome".
     detector = MeetingDetector()
     titles = [("Google Chrome", "Meet - abc-defg-hij")]
     detector.update(signals(0, {"com.google.Chrome.helper"}, titles))
-    assert detector.update(signals(5, {"com.google.Chrome.helper"}, titles)) == Start(
-        "Google Chrome"
-    )
+    assert detector.update(signals(5, {"com.google.Chrome.helper"}, titles)) == Start("Google Meet")
+
+
+def test_browser_with_zoom_in_the_title_reports_zoom_not_the_browser():
+    detector = MeetingDetector()
+    titles = [("Google Chrome", "Zoom Meeting")]
+    detector.update(signals(0, {"com.google.Chrome.helper"}, titles))
+    assert detector.update(signals(5, {"com.google.Chrome.helper"}, titles)) == Start("Zoom")
 
 
 def test_browser_without_a_meeting_title_never_starts():
