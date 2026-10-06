@@ -89,6 +89,23 @@ def _looks_like_a_meeting(mic_bundle_ids: set, window_titles: list) -> tuple[boo
     return False, None
 
 
+def _mic_plausibly_in_a_meeting(mic_bundle_ids: set) -> bool:
+    """Looser than _looks_like_a_meeting's title check -- used only to SUSTAIN an already-
+    active meeting. Requiring the window title to keep matching caused real meetings to be cut
+    into pieces: switching tabs, picture-in-picture, and screen-sharing all change what title
+    macOS reports for the window, without the call actually ending. Starting a new recording
+    still requires the stricter title-matched signal in _looks_like_a_meeting."""
+    if mic_bundle_ids & MEETING_APP_LABELS.keys():
+        return True
+    if SLACK_BUNDLE_ID in mic_bundle_ids:
+        return True
+    return any(
+        bundle_id.startswith(prefix)
+        for bundle_id in mic_bundle_ids
+        for prefix in BROWSER_BUNDLE_PREFIXES
+    )
+
+
 class MeetingDetector:
     """Call update() on every poll (e.g. every 2s) with a fresh detector.Signals. Keeps its own
     debounce timers, so each call only needs the latest reading."""
@@ -125,8 +142,12 @@ class MeetingDetector:
             signals.mic_bundle_ids, signals.window_titles
         )
         now = signals.now
+        # Once active, a plain mic-usage check is enough to keep the meeting going -- see
+        # _mic_plausibly_in_a_meeting's docstring for why the stricter title check is only
+        # appropriate for deciding whether to *start* a new recording.
+        sustaining = self._active and _mic_plausibly_in_a_meeting(signals.mic_bundle_ids)
 
-        if not meeting_like:
+        if not meeting_like and not sustaining:
             self._meeting_since = None
             self._manually_stopped = False  # the meeting ended; a future one can auto-start
             if self._active:
@@ -139,6 +160,8 @@ class MeetingDetector:
             return None
 
         self._not_meeting_since = None
+        if not meeting_like:
+            return None  # sustaining on mic usage alone -- the meeting's already active
         if self._meeting_since is None:
             self._meeting_since = now
         if self._active or self._manually_stopped:
