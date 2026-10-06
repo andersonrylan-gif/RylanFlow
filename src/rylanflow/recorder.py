@@ -17,9 +17,32 @@ CHANNELS = 1
 OPEN_TIMEOUT = 5.0  # seconds to wait for the mic to start
 CLOSE_TIMEOUT = 3.0  # a stream still closing after this long is stuck
 
+# Opening the mic right as another app's virtual audio device reconfigures the input graph
+# (e.g. Krisp's noise-cancelling mic kicking in for a call) can fail transiently -- PortAudio
+# surfaces that as a generic "Internal PortAudio error" rather than anything retry-aware
+# itself. A short retry gives that race a chance to clear instead of failing outright.
+MIC_OPEN_RETRIES = 3
+MIC_OPEN_RETRY_DELAY = 0.5
+
 
 class AudioStuckError(RuntimeError):
     """CoreAudio stopped responding; only a restart of the process recovers it."""
+
+
+def open_input_stream_with_retry(**kwargs) -> sd.InputStream:
+    """sd.InputStream(**kwargs), started and returned -- retried up to MIC_OPEN_RETRIES times
+    on a transient PortAudioError before giving up. Shared by Recorder (dictation) and
+    MicTrack (meetings), which both open an input stream the same way."""
+    for attempt in range(1, MIC_OPEN_RETRIES + 1):
+        try:
+            stream = sd.InputStream(**kwargs)
+            stream.start()
+            return stream
+        except sd.PortAudioError:
+            if attempt == MIC_OPEN_RETRIES:
+                raise
+            log.warning("mic open attempt %d/%d failed, retrying", attempt, MIC_OPEN_RETRIES)
+            time.sleep(MIC_OPEN_RETRY_DELAY)
 
 
 def run_with_timeout(fn, timeout: float):
@@ -86,14 +109,12 @@ class Recorder:
                 self._chunks.append(block.copy())
 
     def _open(self) -> sd.InputStream:
-        stream = sd.InputStream(
+        return open_input_stream_with_retry(
             samplerate=self.sample_rate,
             channels=CHANNELS,
             dtype="float32",
             callback=self._on_audio,
         )
-        stream.start()
-        return stream
 
     def start(self) -> None:
         if self._stream is not None:

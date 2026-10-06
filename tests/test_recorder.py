@@ -127,6 +127,58 @@ def test_audio_after_stop_is_ignored(monkeypatch):
     assert r.stop().size == 480  # only the new recording's audio
 
 
+# --- open_input_stream_with_retry (shared with meetings/mic_track.py) ---
+
+
+def test_start_retries_after_a_transient_port_audio_error(monkeypatch):
+    attempts = []
+
+    def flaky_factory(**kwargs):
+        attempts.append(1)
+        if len(attempts) < recorder.MIC_OPEN_RETRIES:
+            raise recorder.sd.PortAudioError("Internal PortAudio error")
+        return FakeStream(**kwargs)
+
+    monkeypatch.setattr(recorder.sd, "InputStream", flaky_factory)
+    monkeypatch.setattr(recorder.time, "sleep", lambda _s: None)
+    r = Recorder()
+    r.start()  # succeeds on the last retry instead of raising
+
+    assert r.recording
+    assert len(attempts) == recorder.MIC_OPEN_RETRIES
+
+
+def test_start_raises_once_every_retry_is_exhausted(monkeypatch):
+    attempts = []
+
+    def always_fails(**kwargs):
+        attempts.append(1)
+        raise recorder.sd.PortAudioError("Internal PortAudio error")
+
+    monkeypatch.setattr(recorder.sd, "InputStream", always_fails)
+    monkeypatch.setattr(recorder.time, "sleep", lambda _s: None)
+    r = Recorder()
+    with pytest.raises(recorder.sd.PortAudioError):
+        r.start()
+
+    assert len(attempts) == recorder.MIC_OPEN_RETRIES
+    assert not r.recording
+
+
+def test_open_input_stream_with_retry_does_not_retry_on_the_first_success(monkeypatch):
+    calls = []
+
+    def factory(**kwargs):
+        calls.append(1)
+        return FakeStream(**kwargs)
+
+    monkeypatch.setattr(recorder.sd, "InputStream", factory)
+    monkeypatch.setattr(recorder.time, "sleep", lambda _s: None)
+    recorder.open_input_stream_with_retry(callback=lambda *_a: None)
+
+    assert len(calls) == 1
+
+
 def test_start_times_out_when_mic_hangs(monkeypatch):
     class SlowStream(FakeStream):
         def start(self):

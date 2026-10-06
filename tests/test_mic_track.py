@@ -1,8 +1,7 @@
 import numpy as np
-import pytest
 
 from rylanflow.meetings import mic_track
-from rylanflow.meetings.mic_track import MIC_OPEN_RETRIES, MicTrack
+from rylanflow.meetings.mic_track import MicTrack
 
 
 class FakeStream:
@@ -22,70 +21,41 @@ class FakeStream:
         pass
 
 
-def test_start_opens_on_the_first_try(tmp_path, monkeypatch):
-    calls = []
-
-    def fake_input_stream(callback, **kwargs):
-        calls.append(1)
-        return FakeStream(callback, **kwargs)
-
-    monkeypatch.setattr(mic_track.sd, "InputStream", fake_input_stream)
-    monkeypatch.setattr(mic_track.time, "sleep", lambda _s: None)
-
+def test_start_opens_the_mic(tmp_path, monkeypatch):
+    monkeypatch.setattr(mic_track.sd, "InputStream", FakeStream)
     track = MicTrack(tmp_path / "mic.wav")
     track.start()
-
-    assert len(calls) == 1
-
-
-def test_start_retries_after_a_transient_port_audio_error(tmp_path, monkeypatch):
-    attempts = []
-
-    def flaky_input_stream(callback, **kwargs):
-        attempts.append(1)
-        if len(attempts) < MIC_OPEN_RETRIES:
-            raise mic_track.sd.PortAudioError("Internal PortAudio error")
-        return FakeStream(callback, **kwargs)
-
-    monkeypatch.setattr(mic_track.sd, "InputStream", flaky_input_stream)
-    monkeypatch.setattr(mic_track.time, "sleep", lambda _s: None)
-
-    track = MicTrack(tmp_path / "mic.wav")
-    track.start()  # succeeds on the last retry instead of raising
-
-    assert len(attempts) == MIC_OPEN_RETRIES
+    track.close()
 
 
-def test_start_raises_once_every_retry_is_exhausted(tmp_path, monkeypatch):
-    attempts = []
-
-    def always_fails(callback, **kwargs):
-        attempts.append(1)
-        raise mic_track.sd.PortAudioError("Internal PortAudio error")
-
-    monkeypatch.setattr(mic_track.sd, "InputStream", always_fails)
-    monkeypatch.setattr(mic_track.time, "sleep", lambda _s: None)
-
-    track = MicTrack(tmp_path / "mic.wav")
-    with pytest.raises(mic_track.sd.PortAudioError):
-        track.start()
-
-    assert len(attempts) == MIC_OPEN_RETRIES
-
-
-def test_drain_and_close_still_work_after_a_successful_retry(tmp_path, monkeypatch):
+def test_start_recovers_from_a_transient_port_audio_error(tmp_path, monkeypatch):
+    """MicTrack delegates mic-opening to recorder.open_input_stream_with_retry -- full
+    retry/exhaustion coverage lives in test_recorder.py. This just confirms the wiring: a
+    transient failure here doesn't fail the meeting outright."""
     attempts = []
 
     def flaky_input_stream(callback, **kwargs):
         attempts.append(1)
         if len(attempts) < 2:
             raise mic_track.sd.PortAudioError("Internal PortAudio error")
+        return FakeStream(callback, **kwargs)
+
+    monkeypatch.setattr(mic_track.sd, "InputStream", flaky_input_stream)
+    monkeypatch.setattr(mic_track.time, "sleep", lambda _s: None)
+
+    track = MicTrack(tmp_path / "mic.wav")
+    track.start()
+
+    assert len(attempts) == 2
+
+
+def test_drain_and_close_work_normally(tmp_path, monkeypatch):
+    def fake_input_stream(callback, **kwargs):
         stream = FakeStream(callback, **kwargs)
         callback(np.full((160, 1), 0.5, dtype=np.float32), 160, None, None)
         return stream
 
-    monkeypatch.setattr(mic_track.sd, "InputStream", flaky_input_stream)
-    monkeypatch.setattr(mic_track.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(mic_track.sd, "InputStream", fake_input_stream)
 
     track = MicTrack(tmp_path / "mic.wav")
     track.start()
