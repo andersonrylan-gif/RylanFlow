@@ -129,6 +129,50 @@ def test_the_browser_actually_releasing_the_mic_still_stops_after_the_debounce()
     assert detector.update(signals(55, set())) == Stop()  # 45s since the drop
 
 
+# --- back-to-back meetings: the mic never releases between them ---
+
+
+def test_a_genuinely_new_meeting_title_splits_into_a_second_recording():
+    # Regression: joining a new Meet call right after the last one, in the same browser tab,
+    # never drops the mic -- without checking the title itself, this looked identical to a
+    # brief tab-switch and the two calls got silently merged into one recording.
+    detector = MeetingDetector()
+    first_call = [("Google Chrome", "Meet - abc-defg-hij")]
+    second_call = [("Google Chrome", "Meet - xyz-pqrs-tuv")]
+    mic = {"com.google.Chrome.helper"}
+
+    detector.update(signals(0, mic, first_call))
+    assert detector.update(signals(5, mic, first_call)) == Start("Google Meet")
+    assert detector.update(signals(7, mic, first_call)) is None  # same call, no change
+
+    # the new call's title shows up -- mic never drops
+    assert detector.update(signals(10, mic, second_call)) is None  # debouncing the change
+    assert detector.update(signals(14, mic, second_call)) is None  # 4s since the change, not yet
+    assert detector.update(signals(15, mic, second_call)) == Stop()  # 5s since the change
+
+    # the new meeting starts after its own start debounce
+    assert detector.update(signals(17, mic, second_call)) is None
+    assert detector.update(signals(20, mic, second_call)) == Start("Google Meet")
+
+
+def test_a_brief_flicker_to_a_different_title_does_not_split_the_meeting():
+    # A reconnect banner, an ad, or a loading state can briefly change the title without it
+    # being a different call -- only a title that *stays* different counts.
+    detector = MeetingDetector()
+    first_call = [("Google Chrome", "Meet - abc-defg-hij")]
+    flicker = [("Google Chrome", "Meet - reconnecting")]
+    mic = {"com.google.Chrome.helper"}
+
+    detector.update(signals(0, mic, first_call))
+    assert detector.update(signals(5, mic, first_call)) == Start("Google Meet")
+
+    assert detector.update(signals(10, mic, flicker)) is None  # debouncing the change
+    assert detector.update(signals(13, mic, first_call)) is None  # back to normal before 5s
+    # no Stop was ever returned, and the meeting is still considered the same one
+    for t in range(15, 60, 5):
+        assert detector.update(signals(t, mic, first_call)) is None
+
+
 def test_note_external_start_prevents_a_duplicate_start():
     detector = MeetingDetector()
     detector.note_external_start()
