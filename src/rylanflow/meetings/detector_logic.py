@@ -11,6 +11,11 @@ import dataclasses
 
 START_DEBOUNCE_S = 5.0
 STOP_DEBOUNCE_S = 45.0
+# How long a NEW meeting-looking title must persist, while a meeting's already active, before
+# treating it as a genuinely different meeting rather than a brief flicker (a reconnect banner,
+# an ad, a loading state) in the same call. Reuses START_DEBOUNCE_S's timescale deliberately --
+# same kind of "is this real" judgment, just mid-meeting instead of at the very start.
+TITLE_CHANGE_DEBOUNCE_S = START_DEBOUNCE_S
 
 # Bundle IDs of apps whose mic use alone means "probably in a meeting" (see docs/decisions/
 # 0003-system-audio.md's appendix for how these were chosen / verified).
@@ -65,14 +70,21 @@ class Stop:
     pass
 
 
-def _looks_like_a_meeting(mic_bundle_ids: set, window_titles: list) -> tuple[bool, str | None]:
+def _looks_like_a_meeting(
+    mic_bundle_ids: set, window_titles: list
+) -> tuple[bool, str | None, str | None]:
+    """The third element, `title_key`, identifies *which* meeting this looks like -- the exact
+    window title text for a browser match (Google Meet's tab title includes the call's own
+    code, e.g. "Meet - abc-defg-hij"), or None for a dedicated meeting app, where there's no
+    title-based way to tell two back-to-back calls apart. The caller uses it to notice a
+    genuinely different meeting starting without the mic ever releasing in between."""
     for bundle_id in mic_bundle_ids:
         if label := MEETING_APP_LABELS.get(bundle_id):
-            return True, label
+            return True, label, None
 
     if SLACK_BUNDLE_ID in mic_bundle_ids:
         if any(HUDDLE_TITLE_MARKER in title for _owner, title in window_titles):
-            return True, "Slack"
+            return True, "Slack", None
 
     if any(
         bundle_id.startswith(prefix)
@@ -84,9 +96,9 @@ def _looks_like_a_meeting(mic_bundle_ids: set, window_titles: list) -> tuple[boo
                 continue
             for marker, label in MEETING_TITLE_LABELS.items():
                 if marker in title:
-                    return True, label
+                    return True, label, title
 
-    return False, None
+    return False, None, None
 
 
 def _mic_plausibly_in_a_meeting(mic_bundle_ids: set) -> bool:
@@ -111,14 +123,24 @@ class MeetingDetector:
     debounce timers, so each call only needs the latest reading."""
 
     def __init__(
-        self, start_debounce: float = START_DEBOUNCE_S, stop_debounce: float = STOP_DEBOUNCE_S
+        self,
+        start_debounce: float = START_DEBOUNCE_S,
+        stop_debounce: float = STOP_DEBOUNCE_S,
+        title_change_debounce: float = TITLE_CHANGE_DEBOUNCE_S,
     ) -> None:
         self._start_debounce = start_debounce
         self._stop_debounce = stop_debounce
+        self._title_change_debounce = title_change_debounce
         self._meeting_since: float | None = None
         self._not_meeting_since: float | None = None
         self._active = False
         self._manually_stopped = False
+        # Which meeting the active recording belongs to, and bookkeeping for noticing a
+        # different one starting without the mic ever releasing (back-to-back calls in the
+        # same browser tab) -- see _looks_like_a_meeting's title_key docstring.
+        self._active_title: str | None = None
+        self._pending_title: str | None = None
+        self._different_title_since: float | None = None
 
     def note_external_start(self) -> None:
         """Call after a meeting starts through some path other than this detector's own Start
@@ -127,6 +149,9 @@ class MeetingDetector:
         self._active = True
         self._manually_stopped = False
         self._meeting_since = None
+        self._active_title = None
+        self._pending_title = None
+        self._different_title_since = None
 
     def note_external_stop(self) -> None:
         """Call after a meeting is stopped through some path other than this detector's own Stop
@@ -136,12 +161,26 @@ class MeetingDetector:
         self._active = False
         self._manually_stopped = True
         self._not_meeting_since = None
+        self._active_title = None
+        self._pending_title = None
+        self._different_title_since = None
 
     def update(self, signals) -> Start | Stop | None:
-        meeting_like, app_name = _looks_like_a_meeting(
+        meeting_like, app_name, title = _looks_like_a_meeting(
             signals.mic_bundle_ids, signals.window_titles
         )
         now = signals.now
+
+        if self._active and meeting_like and title is not None:
+            if self._active_title is None:
+                self._active_title = title  # first title seen for an externally-started meeting
+            elif title != self._active_title:
+                return self._handle_possible_new_meeting(title, now)
+
+        if meeting_like and title is not None and title == self._active_title:
+            self._pending_title = None
+            self._different_title_since = None
+
         # Once active, a plain mic-usage check is enough to keep the meeting going -- see
         # _mic_plausibly_in_a_meeting's docstring for why the stricter title check is only
         # appropriate for deciding whether to *start* a new recording.
@@ -156,6 +195,7 @@ class MeetingDetector:
                 elif now - self._not_meeting_since >= self._stop_debounce:
                     self._active = False
                     self._not_meeting_since = None
+                    self._active_title = None
                     return Stop()
             return None
 
@@ -169,5 +209,25 @@ class MeetingDetector:
         if now - self._meeting_since >= self._start_debounce:
             self._active = True
             self._meeting_since = None
+            self._active_title = title
             return Start(app_name)
+        return None
+
+    def _handle_possible_new_meeting(self, title: str, now: float) -> Stop | None:
+        """A meeting-looking title that differs from the active meeting's own title showed up.
+        Debounced the same way as a fresh start, so a brief flicker (reconnect banner, ad,
+        loading state) back to the same call doesn't split it -- only a title that *stays*
+        different gets treated as a genuinely new meeting."""
+        if self._pending_title != title:
+            self._pending_title = title
+            self._different_title_since = now
+            return None
+        if now - self._different_title_since >= self._title_change_debounce:
+            self._active = False
+            self._active_title = None
+            self._not_meeting_since = None
+            self._pending_title = None
+            self._different_title_since = None
+            self._meeting_since = now  # the new meeting's own start-debounce begins now
+            return Stop()
         return None
