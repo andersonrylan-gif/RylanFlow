@@ -102,6 +102,33 @@ def test_slack_with_a_huddle_title_starts():
     assert detector.update(signals(5, {"com.tinyspeck.slackmacgap"}, titles)) == Start("Slack")
 
 
+def test_a_browser_tab_switch_does_not_stop_an_active_meeting():
+    # Regression: Chrome's OS-reported window title tracks whichever tab is frontmost, so
+    # switching away from the Meet tab (or picture-in-picture, or screen-sharing) changes the
+    # title without the call ending. This used to be indistinguishable from "meeting over" and
+    # split one real meeting into several recordings.
+    detector = MeetingDetector()
+    meet_titles = [("Google Chrome", "Meet - abc-defg-hij")]
+    other_titles = [("Google Chrome", "Inbox - Gmail")]
+    detector.update(signals(0, {"com.google.Chrome.helper"}, meet_titles))
+    assert detector.update(signals(5, {"com.google.Chrome.helper"}, meet_titles)) == Start(
+        "Google Meet"
+    )
+    # Tabbed away for well past the old 45s stop debounce -- mic usage never drops.
+    for t in range(10, 120, 5):
+        assert detector.update(signals(t, {"com.google.Chrome.helper"}, other_titles)) is None
+
+
+def test_the_browser_actually_releasing_the_mic_still_stops_after_the_debounce():
+    detector = MeetingDetector()
+    meet_titles = [("Google Chrome", "Meet - abc-defg-hij")]
+    detector.update(signals(0, {"com.google.Chrome.helper"}, meet_titles))
+    detector.update(signals(5, {"com.google.Chrome.helper"}, meet_titles))  # Start
+    assert detector.update(signals(10, set())) is None  # mic actually released
+    assert detector.update(signals(54, set())) is None  # 44s since the drop
+    assert detector.update(signals(55, set())) == Stop()  # 45s since the drop
+
+
 def test_note_external_start_prevents_a_duplicate_start():
     detector = MeetingDetector()
     detector.note_external_start()

@@ -187,6 +187,31 @@ def test_render_runs_the_overlay_while_recording(make_app, monkeypatch):
     assert ensured == [1]
 
 
+def test_play_cue_start_kicks_the_overlay_immediately(make_app, monkeypatch):
+    # Regression: the overlay used to depend entirely on _render's 0.2s poll noticing the new
+    # state, which a busy shared Whisper worker could delay long enough to miss a short
+    # dictation. on_cue("start") fires synchronously the moment recording actually starts.
+    app, _store = make_app()
+    monkeypatch.setattr(app_module.AppHelper, "callAfter", lambda fn: fn())
+    ensured = []
+    monkeypatch.setattr(app._overlay, "ensure_running", lambda: ensured.append(1))
+
+    app._play_cue("start")
+
+    assert ensured == [1]
+
+
+def test_play_cue_stop_does_not_touch_the_overlay(make_app, monkeypatch):
+    app, _store = make_app()
+    monkeypatch.setattr(app_module.AppHelper, "callAfter", lambda fn: fn())
+    ensured = []
+    monkeypatch.setattr(app._overlay, "ensure_running", lambda: ensured.append(1))
+
+    app._play_cue("stop")
+
+    assert ensured == []
+
+
 def test_apply_settings_main_thread_ignores_unknown_values(make_app):
     app, _store = make_app(hotkey="alt_r", model="base-model")
 

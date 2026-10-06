@@ -204,6 +204,14 @@ class RylanFlowApp(rumps.App):
         self._notify(message)
 
     def _play_cue(self, name: str) -> None:
+        if name == "start":
+            # Don't wait on _render's 0.2s poll to notice the new state and kick the overlay
+            # alive -- if the shared Whisper worker is mid-transcription of a meeting chunk, the
+            # GIL can delay that poll long enough that a short dictation finishes (audio
+            # captured, transcribed, pasted -- none of that depends on the overlay) before the
+            # poll ever runs, so the overlay never shows at all. Triggering it from the exact
+            # moment recording starts fixes that regardless of how busy the poll is.
+            AppHelper.callAfter(self._overlay.ensure_running)
         if self._config.sounds:
             sounds.play(name)
 
