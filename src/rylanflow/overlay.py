@@ -103,6 +103,7 @@ class Overlay:
         self._panel = None
         self._view = None
         self._timer = None
+        self._diag_ticks_left = 0  # counts down to one diagnostic state log per show session
 
     def set_sources(self, state_fn, level_fn) -> None:
         self._state_fn = state_fn
@@ -115,6 +116,7 @@ class Overlay:
         """Cheap to call repeatedly; only does anything the first time after the timer stops."""
         if self._timer is None:
             log.info("overlay: starting (state=%s)", self._state_fn())
+            self._diag_ticks_left = 5  # ~166ms at 30fps -- enough for the window server to settle
             self._start_timer()
 
     def stop(self) -> None:
@@ -156,6 +158,22 @@ class Overlay:
                 self._panel.frame(),
                 len(AppKit.NSScreen.screens()),
             )
+        if self._diag_ticks_left > 0:
+            self._diag_ticks_left -= 1
+            if self._diag_ticks_left == 0:
+                # Read this a few ticks after order-front, not the same tick, so the window
+                # server has had a moment to settle -- a no-op Python-level
+                # orderFrontRegardless() call tells us nothing about whether it actually agreed
+                # to show the window, so check its own state directly instead of assuming
+                # success from the absence of an error.
+                log.info(
+                    "overlay: isVisible=%s alpha=%.2f occlusionState=%d level=%d screens=%s",
+                    self._panel.isVisible(),
+                    self._panel.alphaValue(),
+                    self._panel.occlusionState(),
+                    self._panel.level(),
+                    [s.frame() for s in AppKit.NSScreen.screens()],
+                )
 
     def _build(self) -> None:
         rect = NSMakeRect(0, 0, WIDTH, HEIGHT)
