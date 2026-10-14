@@ -114,10 +114,12 @@ class Overlay:
     def ensure_running(self) -> None:
         """Cheap to call repeatedly; only does anything the first time after the timer stops."""
         if self._timer is None:
+            log.info("overlay: starting (state=%s)", self._state_fn())
             self._start_timer()
 
     def stop(self) -> None:
         if self._timer is not None:
+            log.info("overlay: stopping")
             self._timer.invalidate()
             self._timer = None
         if self._panel is not None:
@@ -142,11 +144,18 @@ class Overlay:
         if not frame.visible:
             self.stop()
             return
-        if self._panel is None:
+        first_build = self._panel is None
+        if first_build:
             self._build()
         self._position_panel()
         self._view.setFrameData_(frame)
         self._panel.orderFrontRegardless()  # shows it without taking focus from the dictated app
+        if first_build:
+            log.info(
+                "overlay: panel built, frame=%s, screen count=%d",
+                self._panel.frame(),
+                len(AppKit.NSScreen.screens()),
+            )
 
     def _build(self) -> None:
         rect = NSMakeRect(0, 0, WIDTH, HEIGHT)

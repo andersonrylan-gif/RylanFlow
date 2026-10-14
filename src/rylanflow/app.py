@@ -211,9 +211,20 @@ class RylanFlowApp(rumps.App):
             # captured, transcribed, pasted -- none of that depends on the overlay) before the
             # poll ever runs, so the overlay never shows at all. Triggering it from the exact
             # moment recording starts fixes that regardless of how busy the poll is.
-            AppHelper.callAfter(self._overlay.ensure_running)
+            log.info("dictation started; kicking the overlay")
+            AppHelper.callAfter(self._ensure_overlay_running)
         if self._config.sounds:
             sounds.play(name)
+
+    def _ensure_overlay_running(self) -> None:
+        # A packaged GUI app has no attached terminal, so an exception raised inside a block
+        # PyObjC's run loop invokes (like this one, scheduled via AppHelper.callAfter) can be
+        # printed to a stderr nobody will ever see and otherwise vanish without a trace. Catch
+        # and log it explicitly so a silent overlay failure shows up in the log file.
+        try:
+            self._overlay.ensure_running()
+        except Exception:
+            log.exception("could not start the overlay")
 
     def _on_text(self, text: str, seconds: float) -> None:
         if self._config.remove_fillers:
@@ -248,7 +259,7 @@ class RylanFlowApp(rumps.App):
                 self._meeting_indicator.stop()
         self._pipeline.tick()
         if self._config.overlay != "off" and self._pipeline.state != "idle":
-            self._overlay.ensure_running()  # cheap no-op once it's already running
+            self._ensure_overlay_running()  # cheap no-op once it's already running
         reason = self._pipeline.restart_reason()
         if reason and not self._restarting:
             self._restarting = True

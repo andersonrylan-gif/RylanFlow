@@ -201,6 +201,24 @@ def test_play_cue_start_kicks_the_overlay_immediately(make_app, monkeypatch):
     assert ensured == [1]
 
 
+def test_ensure_overlay_running_logs_and_swallows_an_exception(make_app, monkeypatch, caplog):
+    # Regression: a packaged GUI app has no attached terminal, so an exception raised inside a
+    # block PyObjC's run loop invokes (like the one AppHelper.callAfter schedules) can vanish
+    # without a trace instead of showing up anywhere -- which made a real overlay failure
+    # completely silent and impossible to diagnose from the log.
+    app, _store = make_app()
+    caplog.set_level("ERROR")
+
+    def boom():
+        raise RuntimeError("overlay exploded")
+
+    monkeypatch.setattr(app._overlay, "ensure_running", boom)
+
+    app._ensure_overlay_running()  # must not raise
+
+    assert "could not start the overlay" in caplog.text
+
+
 def test_play_cue_stop_does_not_touch_the_overlay(make_app, monkeypatch):
     app, _store = make_app()
     monkeypatch.setattr(app_module.AppHelper, "callAfter", lambda fn: fn())
