@@ -47,4 +47,12 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
     ]
     if config.language:
         lines.append(f'language = "{config.language}"')
-    path.write_text("\n".join(lines) + "\n")
+    # Write to a temp file and rename it into place rather than writing config.toml directly --
+    # a process killed mid-write (a crash, a force-quit, `pkill -9`) can otherwise leave the
+    # file truncated at a line boundary, which is still valid-but-incomplete TOML: fields
+    # written before the cut survive, everything after silently reverts to its dataclass
+    # default on the next load, with no error anywhere. os.replace() is atomic on the same
+    # filesystem, so readers only ever see the old complete file or the new complete file.
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text("\n".join(lines) + "\n")
+    tmp_path.replace(path)
