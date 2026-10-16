@@ -193,3 +193,20 @@ def test_start_times_out_when_mic_hangs(monkeypatch):
     except AudioStuckError:
         pass
     assert not r.recording
+    assert r.stuck  # so the pipeline asks the app to restart instead of hanging on every press
+
+
+def test_a_failed_but_not_hung_open_is_not_stuck(monkeypatch):
+    class BrokenStream(FakeStream):
+        def start(self):
+            raise RuntimeError("no input device")
+
+    monkeypatch.setattr(recorder.sd, "InputStream", BrokenStream)
+    monkeypatch.setattr(recorder, "MIC_OPEN_RETRY_DELAY", 0)
+    r = Recorder()
+    try:
+        r.start()
+        raise AssertionError("expected RuntimeError")
+    except RuntimeError:
+        pass
+    assert not r.stuck
