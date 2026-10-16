@@ -192,6 +192,12 @@
     for (const key of ["sounds", "remove_fillers", "start_at_login", "auto_record_meetings"]) {
       document.getElementById(`setting-${key}`).classList.toggle("on", !!settings[key]);
     }
+    const snippets = document.getElementById("setting-snippets");
+    if (document.activeElement !== snippets) {
+      snippets.value = Object.entries(settings.snippets || {})
+        .map(([trigger, expansion]) => `${trigger} => ${expansion}`)
+        .join("\n");
+    }
     const vocabulary = document.getElementById("setting-vocabulary");
     if (document.activeElement !== vocabulary) vocabulary.value = (settings.vocabulary || []).join("\n");
   }
@@ -203,6 +209,14 @@
   document.getElementById("setting-hotkey").addEventListener("change", (e) => putSettings({ hotkey: e.target.value }));
   document.getElementById("setting-model").addEventListener("change", (e) => putSettings({ model: e.target.value }));
   document.getElementById("setting-overlay").addEventListener("change", (e) => putSettings({ overlay: e.target.value }));
+  document.getElementById("setting-snippets").addEventListener("blur", (e) => {
+    const snippets = {};
+    for (const line of e.target.value.split("\n")) {
+      const at = line.indexOf("=>");
+      if (at > 0) snippets[line.slice(0, at)] = line.slice(at + 2);
+    }
+    putSettings({ snippets });
+  });
   document.getElementById("setting-vocabulary").addEventListener("blur", (e) =>
     putSettings({ vocabulary: e.target.value.split("\n") }),
   );

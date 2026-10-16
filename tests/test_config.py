@@ -73,3 +73,18 @@ def test_malformed_vocabulary_falls_back_to_empty(tmp_path):
     path = tmp_path / "config.toml"
     path.write_text('vocabulary = "not a list"\n')
     assert load_config(path).vocabulary == []
+
+
+def test_snippets_roundtrip_with_quotes_and_newlines(tmp_path):
+    path = tmp_path / "config.toml"
+    snippets = {'say "hi"': "line1\nline2 \\ end", "my email": "me@example.com"}
+    save_config(Config(snippets=snippets), path)
+    assert load_config(path).snippets == snippets
+    save_config(Config(), path)
+    assert load_config(path).snippets == {}
+
+
+def test_malformed_snippets_fall_back_to_empty(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('snippets = "nope"\n')
+    assert load_config(path).snippets == {}

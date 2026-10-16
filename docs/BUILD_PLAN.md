@@ -469,6 +469,10 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - `Config.vocabulary` (Settings page, one word per line) is sent to Whisper as `initial_prompt`
     by both `transcribe()` and `transcribe_segments()`, so dictation and meeting chunks share it.
 
+- [x] **4.4 Snippets** (Wispr Flow voice shortcuts).
+  - `Config.snippets` (Settings page, `trigger => expansion` per line): a spoken trigger phrase is
+    replaced by its expansion before pasting (`cleanup.apply_snippets`). Dictation only.
+
 ---
 
 ## 7. Verification checklist (run at each release)
