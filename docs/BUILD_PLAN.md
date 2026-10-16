@@ -435,8 +435,10 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
 >   summaries and action items (cloud-side, in their case). RylanFlow was explicitly scoped as
 >   "transcripts only, no AI summaries, everything stays on the Mac" (section 1). Closing this
 >   gap means either running a local LLM for summarization (keeps the privacy stance, adds
->   meaningful complexity and disk/RAM cost) or calling a cloud API (breaks the stance). **Don't
->   build this without the owner picking one** -- flagged, not decided, as of this writing.
+>   meaningful complexity and disk/RAM cost) or calling a cloud API (breaks the stance). **Decided
+>   2026-10-15: the owner chose to skip AI summaries/action items/"what did I miss" and to skip
+>   noise cancellation (Krisp's is a proprietary model plus a virtual audio driver). RylanFlow stays
+>   transcripts-only and local. Don't revisit unless the owner asks.**
 
 - [x] **4.1 MCP server: expose dictations and meetings to other AI tools.**
   - **Files:** `src/rylanflow/mcp_server.py` (new), `src/rylanflow/__main__.py` (new `mcp`
