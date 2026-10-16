@@ -222,6 +222,8 @@ class RylanFlowApp(rumps.App):
             AppHelper.callAfter(self._ensure_overlay_running)
         if self._config.sounds:
             sounds.play(name)
+        else:
+            log.info("cue %r skipped: sound cues are turned off in settings", name)
 
     def _ensure_overlay_running(self) -> None:
         # A packaged GUI app has no attached terminal, so an exception raised inside a block
