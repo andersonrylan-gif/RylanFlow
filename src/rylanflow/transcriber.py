@@ -16,6 +16,27 @@ HALLUCINATION_NO_SPEECH_PROB = 0.6
 HALLUCINATION_AVG_LOGPROB = -1.0
 
 
+MAX_VOCABULARY_WORDS = 100
+
+
+def clean_vocabulary(words: list) -> list[str]:
+    """Trim, drop blanks and case-insensitive duplicates (keeping the first spelling)."""
+    seen: set[str] = set()
+    cleaned = []
+    for word in words:
+        word = str(word).strip()
+        if word and word.lower() not in seen:
+            seen.add(word.lower())
+            cleaned.append(word)
+    return cleaned[:MAX_VOCABULARY_WORDS]
+
+
+def vocabulary_prompt(words: list[str]) -> str | None:
+    """Whisper's `initial_prompt` biases spelling towards words it sees there -- the usual way
+    to get names and jargon right without fine-tuning."""
+    return f"Vocabulary: {', '.join(words)}." if words else None
+
+
 @dataclass
 class Segment:
     start: float
@@ -34,9 +55,15 @@ class Transcriber(Protocol):
 class MLXWhisperTranscriber:
     """Runs Whisper on-device using Apple's MLX framework."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, language: str | None = None) -> None:
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        language: str | None = None,
+        vocabulary: list[str] | None = None,
+    ) -> None:
         self.model = model
         self.language = language
+        self.vocabulary = vocabulary or []
 
     def transcribe(self, audio: np.ndarray) -> str:
         if audio.size == 0:
@@ -47,6 +74,7 @@ class MLXWhisperTranscriber:
             audio.astype(np.float32),
             path_or_hf_repo=self.model,
             language=self.language,
+            initial_prompt=vocabulary_prompt(self.vocabulary),
         )
         return result["text"].strip()
 
@@ -67,6 +95,7 @@ class MLXWhisperTranscriber:
             audio.astype(np.float32),
             path_or_hf_repo=self.model,
             language=self.language,
+            initial_prompt=vocabulary_prompt(self.vocabulary),
             **kwargs,
         )
         segments = []

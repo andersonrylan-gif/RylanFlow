@@ -251,6 +251,18 @@ h1 {
 .settings-row .label { font-size: 14px; }
 .settings-row .hint { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
+textarea {
+  font: inherit;
+  font-size: 13px;
+  width: 220px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: inherit;
+  resize: vertical;
+}
+
 select {
   font-size: 13px;
   padding: 6px 10px;

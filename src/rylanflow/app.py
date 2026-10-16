@@ -28,7 +28,12 @@ from rylanflow.pipeline import Pipeline
 from rylanflow.recorder import Recorder
 from rylanflow.relaunch import relaunch_and_exit
 from rylanflow.store import Store, data_dir
-from rylanflow.transcriber import DEFAULT_MODEL, FAST_MODEL, MLXWhisperTranscriber
+from rylanflow.transcriber import (
+    DEFAULT_MODEL,
+    FAST_MODEL,
+    MLXWhisperTranscriber,
+    clean_vocabulary,
+)
 from rylanflow.transcription_service import TranscriptionService
 
 APPLY_SETTINGS_TIMEOUT = 5.0  # seconds the dashboard's HTTP thread waits for the main thread
@@ -113,7 +118,9 @@ class RylanFlowApp(rumps.App):
         self._config = config or load_config()
         self._store = store or Store()
         self._last_transcript = ""
-        self._transcriber = MLXWhisperTranscriber(self._config.model, self._config.language)
+        self._transcriber = MLXWhisperTranscriber(
+            self._config.model, self._config.language, self._config.vocabulary
+        )
         self._inserter = ClipboardInserter()
         self._recorder = Recorder()
         # Shared so dictation and meeting transcription run on one Whisper worker, with
@@ -305,6 +312,9 @@ class RylanFlowApp(rumps.App):
         if "remove_fillers" in changes:
             self._config.remove_fillers = bool(changes["remove_fillers"])
             self._fillers_item.state = int(self._config.remove_fillers)
+        if isinstance(changes.get("vocabulary"), list):
+            self._config.vocabulary = clean_vocabulary(changes["vocabulary"])
+            self._transcriber.vocabulary = self._config.vocabulary
         if "start_at_login" in changes:
             (autostart.enable if changes["start_at_login"] else autostart.disable)()
         if (overlay := changes.get("overlay")) in OVERLAY_POSITIONS.values():
@@ -332,6 +342,7 @@ class RylanFlowApp(rumps.App):
             "start_at_login": autostart.is_enabled(),
             "overlay": self._config.overlay,
             "auto_record_meetings": self._config.auto_record_meetings,
+            "vocabulary": self._config.vocabulary,
             # So the dashboard's Settings page never hardcodes these choices itself.
             "available_hotkeys": HOTKEYS,
             "available_models": MODELS,
