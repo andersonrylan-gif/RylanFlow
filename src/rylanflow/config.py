@@ -23,6 +23,7 @@ class Config:
     dashboard_seen: bool = False  # True once the dashboard has auto-opened on first launch
     overlay: str = "bottom"  # where the dictation pop-up appears: "bottom", "top", or "off"
     auto_record_meetings: bool = True  # auto-start/stop meeting recording from detector.py
+    snippets: dict[str, str] = field(default_factory=dict)  # spoken trigger -> text to paste
     vocabulary: list[str] = field(default_factory=list)  # names/jargon Whisper should spell right
 
 
@@ -33,6 +34,13 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     with path.open("rb") as f:
         data = tomllib.load(f)
     known = {k: v for k, v in data.items() if k in Config.__dataclass_fields__}
+    if "snippets" in known:
+        table = known["snippets"]
+        known["snippets"] = (
+            {k: v for k, v in table.items() if isinstance(v, str)}
+            if isinstance(table, dict)
+            else {}
+        )
     if "vocabulary" in known:
         words = known["vocabulary"]
         known["vocabulary"] = (
@@ -52,6 +60,9 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
         f'overlay = "{config.overlay}"',
         f"auto_record_meetings = {str(config.auto_record_meetings).lower()}",
         # A JSON string is a valid TOML basic string, so json.dumps handles quoting/escaping.
+        "snippets = {"
+        + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in config.snippets.items())
+        + "}",
         f"vocabulary = [{', '.join(json.dumps(w) for w in config.vocabulary)}]",
     ]
     if config.language:

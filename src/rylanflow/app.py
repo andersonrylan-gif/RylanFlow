@@ -10,7 +10,7 @@ import rumps
 from PyObjCTools import AppHelper
 
 from rylanflow import autostart, sounds
-from rylanflow.cleanup import remove_fillers
+from rylanflow.cleanup import apply_snippets, clean_snippets, remove_fillers
 from rylanflow.config import Config, load_config, save_config
 from rylanflow.dashboard.server import DashboardServer
 from rylanflow.hotkey import PushToTalk
@@ -236,6 +236,7 @@ class RylanFlowApp(rumps.App):
     def _on_text(self, text: str, seconds: float) -> None:
         if self._config.remove_fillers:
             text = remove_fillers(text)
+        text = apply_snippets(text, self._config.snippets)
         if not text:
             return
         self._last_transcript = text
@@ -312,6 +313,8 @@ class RylanFlowApp(rumps.App):
         if "remove_fillers" in changes:
             self._config.remove_fillers = bool(changes["remove_fillers"])
             self._fillers_item.state = int(self._config.remove_fillers)
+        if isinstance(changes.get("snippets"), dict):
+            self._config.snippets = clean_snippets(changes["snippets"])
         if isinstance(changes.get("vocabulary"), list):
             self._config.vocabulary = clean_vocabulary(changes["vocabulary"])
             self._transcriber.vocabulary = self._config.vocabulary
@@ -343,6 +346,7 @@ class RylanFlowApp(rumps.App):
             "overlay": self._config.overlay,
             "auto_record_meetings": self._config.auto_record_meetings,
             "vocabulary": self._config.vocabulary,
+            "snippets": self._config.snippets,
             # So the dashboard's Settings page never hardcodes these choices itself.
             "available_hotkeys": HOTKEYS,
             "available_models": MODELS,
