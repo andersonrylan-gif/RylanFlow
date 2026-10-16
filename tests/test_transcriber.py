@@ -36,7 +36,25 @@ def test_transcribe_strips_text_and_passes_options(monkeypatch):
     )
     t: Transcriber = MLXWhisperTranscriber(model="m", language="en")
     assert t.transcribe(np.ones(1600, dtype=np.float32)) == "hello world"
-    assert calls == {"path_or_hf_repo": "m", "language": "en"}
+    assert calls == {"path_or_hf_repo": "m", "language": "en", "initial_prompt": None}
+
+
+def test_transcribe_passes_vocabulary_as_initial_prompt(monkeypatch):
+    calls = {}
+
+    def fake_transcribe(audio, **kwargs):
+        calls.update(kwargs)
+        return {"text": "ok", "segments": []}
+
+    monkeypatch.setitem(
+        sys.modules, "mlx_whisper", types.SimpleNamespace(transcribe=fake_transcribe)
+    )
+    t = MLXWhisperTranscriber(model="m", vocabulary=["Rylan", "MLX"])
+    t.transcribe(np.ones(1600, dtype=np.float32))
+    assert calls["initial_prompt"] == "Vocabulary: Rylan, MLX."
+    calls.clear()
+    t.transcribe_segments(np.ones(1600, dtype=np.float32), meeting=True)
+    assert calls["initial_prompt"] == "Vocabulary: Rylan, MLX."
 
 
 def test_read_wav_roundtrip(tmp_path):
@@ -154,3 +172,17 @@ def test_transcribe_segments_non_meeting_mode_does_not_filter_hallucinations(mon
     )
     segments = MLXWhisperTranscriber().transcribe_segments(np.ones(1600, dtype=np.float32))
     assert [s.text for s in segments] == ["Thank you."]
+
+
+def test_clean_vocabulary_trims_dedupes_and_caps():
+    from rylanflow.transcriber import MAX_VOCABULARY_WORDS, clean_vocabulary
+
+    assert clean_vocabulary(["  Rylan ", "", "rylan", "MLX"]) == ["Rylan", "MLX"]
+    assert len(clean_vocabulary([f"w{i}" for i in range(500)])) == MAX_VOCABULARY_WORDS
+
+
+def test_vocabulary_prompt():
+    from rylanflow.transcriber import vocabulary_prompt
+
+    assert vocabulary_prompt([]) is None
+    assert vocabulary_prompt(["Rylan", "MLX"]) == "Vocabulary: Rylan, MLX."

@@ -60,3 +60,16 @@ def test_a_failed_save_never_leaves_a_truncated_file(tmp_path, monkeypatch):
 
     assert path.read_text() == original  # the old, complete file is untouched
     assert not path.with_suffix(".toml.tmp").exists()
+
+
+def test_vocabulary_roundtrip_with_quotes_and_unicode(tmp_path):
+    path = tmp_path / "config.toml"
+    words = ["Kubernetes", 'say "hi"', "Zoë", "back\\slash"]
+    save_config(Config(vocabulary=words), path)
+    assert load_config(path).vocabulary == words
+
+
+def test_malformed_vocabulary_falls_back_to_empty(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('vocabulary = "not a list"\n')
+    assert load_config(path).vocabulary == []

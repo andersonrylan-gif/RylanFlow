@@ -465,10 +465,9 @@ Each step lists **Files**, **Do**, **Tests**, **Done when**. Keep every PR small
   - **Done when:** searching the dashboard's Meetings tab and the MCP `search_dictations`-style
     tool both find the right meeting by something someone said in it.
 
-- [ ] **4.3 Personal vocabulary carried from dictation into meetings** (Wispr Flow does this).
-  - If RylanFlow ever gains a custom-word/acronym list for dictation (it doesn't yet), apply the
-    same list when transcribing meeting chunks (`transcribe_segments`). Lower priority than 4.1/4.2;
-    only start this once a dictation vocabulary feature exists to carry over.
+- [x] **4.3 Personal vocabulary carried from dictation into meetings** (Wispr Flow does this).
+  - `Config.vocabulary` (Settings page, one word per line) is sent to Whisper as `initial_prompt`
+    by both `transcribe()` and `transcribe_segments()`, so dictation and meeting chunks share it.
 
 ---
 

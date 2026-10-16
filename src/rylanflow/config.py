@@ -1,8 +1,9 @@
 """User settings in ~/.config/rylanflow/config.toml."""
 
+import json
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from rylanflow.transcriber import FAST_MODEL
@@ -22,6 +23,7 @@ class Config:
     dashboard_seen: bool = False  # True once the dashboard has auto-opened on first launch
     overlay: str = "bottom"  # where the dictation pop-up appears: "bottom", "top", or "off"
     auto_record_meetings: bool = True  # auto-start/stop meeting recording from detector.py
+    vocabulary: list[str] = field(default_factory=list)  # names/jargon Whisper should spell right
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -31,6 +33,11 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
     with path.open("rb") as f:
         data = tomllib.load(f)
     known = {k: v for k, v in data.items() if k in Config.__dataclass_fields__}
+    if "vocabulary" in known:
+        words = known["vocabulary"]
+        known["vocabulary"] = (
+            [w for w in words if isinstance(w, str)] if isinstance(words, list) else []
+        )
     return Config(**known)
 
 
@@ -44,6 +51,8 @@ def save_config(config: Config, path: Path = CONFIG_PATH) -> None:
         f"dashboard_seen = {str(config.dashboard_seen).lower()}",
         f'overlay = "{config.overlay}"',
         f"auto_record_meetings = {str(config.auto_record_meetings).lower()}",
+        # A JSON string is a valid TOML basic string, so json.dumps handles quoting/escaping.
+        f"vocabulary = [{', '.join(json.dumps(w) for w in config.vocabulary)}]",
     ]
     if config.language:
         lines.append(f'language = "{config.language}"')

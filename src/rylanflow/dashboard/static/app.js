@@ -192,6 +192,8 @@
     for (const key of ["sounds", "remove_fillers", "start_at_login", "auto_record_meetings"]) {
       document.getElementById(`setting-${key}`).classList.toggle("on", !!settings[key]);
     }
+    const vocabulary = document.getElementById("setting-vocabulary");
+    if (document.activeElement !== vocabulary) vocabulary.value = (settings.vocabulary || []).join("\n");
   }
 
   async function loadSettings() {
@@ -201,6 +203,9 @@
   document.getElementById("setting-hotkey").addEventListener("change", (e) => putSettings({ hotkey: e.target.value }));
   document.getElementById("setting-model").addEventListener("change", (e) => putSettings({ model: e.target.value }));
   document.getElementById("setting-overlay").addEventListener("change", (e) => putSettings({ overlay: e.target.value }));
+  document.getElementById("setting-vocabulary").addEventListener("blur", (e) =>
+    putSettings({ vocabulary: e.target.value.split("\n") }),
+  );
   for (const key of ["sounds", "remove_fillers", "start_at_login", "auto_record_meetings"]) {
     document.getElementById(`setting-${key}`).addEventListener("click", (e) => {
       const nowOn = !e.currentTarget.classList.contains("on");
