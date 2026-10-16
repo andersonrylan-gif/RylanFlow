@@ -222,6 +222,7 @@
   let meetingsCache = [];
   let currentMeetingId = null; // set while the detail view is open
   let currentMeetingsQuery = "";
+  let currentAttendees = []; // calendar attendee names, offered as suggestions while renaming
   let renamingSpeaker = false; // true while a speaker-rename <input> is open, so poll() leaves it alone
   const meetingConfirming = new Set();
 
@@ -333,6 +334,7 @@
   }
 
   function renderMeetingDetail(meeting) {
+    currentAttendees = meeting.attendees || [];
     document.getElementById("meeting-detail-title").textContent =
       meeting.title || `Meeting with ${meeting.source_app || "unknown app"}`;
     document.getElementById("meeting-detail-meta").textContent =
@@ -382,8 +384,17 @@
     const input = document.createElement("input");
     input.className = "speaker-rename-input";
     input.value = currentName;
+    const suggestions = document.createElement("datalist");
+    suggestions.id = "speaker-suggestions";
+    for (const name of currentAttendees) {
+      const option = document.createElement("option");
+      option.value = name;
+      suggestions.appendChild(option);
+    }
+    input.setAttribute("list", suggestions.id);
     target.textContent = "";
     target.appendChild(input);
+    target.appendChild(suggestions);
     input.focus();
     input.select();
 
