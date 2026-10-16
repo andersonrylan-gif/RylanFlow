@@ -70,7 +70,8 @@ class Recorder:
 
     Stopping a PortAudio stream on macOS can deadlock inside CoreAudio, so stop() never waits
     for it: it returns the captured audio at once and closes the stream on a background thread.
-    If that close hangs, `stuck` becomes True and the app restarts itself.
+    If that close hangs, or opening the mic hangs, `stuck` becomes True and the app restarts
+    itself.
     """
 
     def __init__(self, sample_rate: int = SAMPLE_RATE, clock=time.monotonic) -> None:
@@ -81,6 +82,7 @@ class Recorder:
         self._lock = threading.Lock()
         self._stream: sd.InputStream | None = None
         self._closing: list[tuple[threading.Thread, float]] = []
+        self._open_hung = False  # an open timed out; its CoreAudio thread may never return
         self._level = 0.0  # RMS of the most recent audio block, for the dictation pop-up
 
     @property
@@ -96,7 +98,10 @@ class Recorder:
 
     @property
     def stuck(self) -> bool:
-        """True if an old stream has been trying to close for longer than CLOSE_TIMEOUT."""
+        """True if opening the mic hung, or an old stream has been trying to close for longer
+        than CLOSE_TIMEOUT. Either way only a restart reliably frees CoreAudio again."""
+        if self._open_hung:
+            return True
         now = self._clock()
         self._closing = [(t, since) for t, since in self._closing if t.is_alive()]
         return any(now - since > CLOSE_TIMEOUT for _, since in self._closing)
@@ -126,9 +131,13 @@ class Recorder:
             self._capturing = True
         try:
             self._stream = run_with_timeout(self._open, OPEN_TIMEOUT)
-        except BaseException:
+        except BaseException as exc:
             with self._lock:
                 self._capturing = False
+            if isinstance(exc, AudioStuckError):
+                # Without this, stuck stayed False after a hung open, so the app never restarted
+                # and every later key press hung for OPEN_TIMEOUT and failed the same way.
+                self._open_hung = True
             raise
 
     def stop(self) -> np.ndarray:
