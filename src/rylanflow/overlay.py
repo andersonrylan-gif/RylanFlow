@@ -181,7 +181,14 @@ class Overlay:
         panel = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
             rect, style, AppKit.NSBackingStoreBuffered, False
         )
-        panel.setLevel_(AppKit.NSStatusWindowLevel)
+        # RylanFlow is never the active app while you dictate into another one. These keep the
+        # panel up regardless: don't hide when we're inactive, and don't hide with the app.
+        # setFloatingPanel_ resets the level, so it must come before setLevel_.
+        panel.setFloatingPanel_(True)
+        panel.setHidesOnDeactivate_(False)
+        panel.setCanHide_(False)
+        # Above menus and over full-screen apps, whichever app is frontmost.
+        panel.setLevel_(AppKit.NSPopUpMenuWindowLevel)
         panel.setOpaque_(False)
         panel.setBackgroundColor_(AppKit.NSColor.clearColor())
         panel.setHasShadow_(True)
@@ -190,6 +197,7 @@ class Overlay:
             AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
             | AppKit.NSWindowCollectionBehaviorStationary
             | AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+            | AppKit.NSWindowCollectionBehaviorIgnoresCycle
         )
 
         effect = AppKit.NSVisualEffectView.alloc().initWithFrame_(rect)
