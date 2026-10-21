@@ -296,3 +296,37 @@ def test_on_system_sleep_is_a_noop_without_an_active_meeting(make_app):
     app._on_system_sleep()
 
     assert stopped == []
+
+
+def test_a_failed_meeting_start_stops_the_detector_retrying(make_app, monkeypatch):
+    # Regression: the detector kept believing the failed meeting was recording, then stopped
+    # and re-started it every few seconds -- two notifications each time, all meeting long.
+    app, _store = make_app()
+    notes = []
+    monkeypatch.setattr(app, "_notify", notes.append)
+    app._meeting_detector.note_external_start()
+
+    app._on_meeting_failed("Couldn't start capturing the meeting.")
+
+    assert notes == ["Couldn't start capturing the meeting."]
+    assert not app._meeting_detector._active
+    assert app._meeting_detector._manually_stopped
+
+
+def test_a_hung_meeting_mic_asks_for_a_restart(make_app, monkeypatch):
+    app, _store = make_app()
+    monkeypatch.setattr(app._meeting_session, "_audio_stuck", True)
+    app._started_at -= app_module.MEETING_RESTART_MIN_UPTIME + 1
+    assert app._meeting_restart_reason() == "the meeting microphone stopped responding"
+
+
+def test_a_hung_meeting_mic_right_after_a_restart_does_not_restart_again(make_app, monkeypatch):
+    app, _store = make_app()
+    monkeypatch.setattr(app._meeting_session, "_audio_stuck", True)
+    assert app._meeting_restart_reason() is None
+
+
+def test_no_meeting_restart_while_the_meeting_mic_is_fine(make_app):
+    app, _store = make_app()
+    app._started_at -= app_module.MEETING_RESTART_MIN_UPTIME + 1
+    assert app._meeting_restart_reason() is None

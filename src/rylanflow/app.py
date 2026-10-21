@@ -38,6 +38,9 @@ from rylanflow.transcription_service import TranscriptionService
 
 APPLY_SETTINGS_TIMEOUT = 5.0  # seconds the dashboard's HTTP thread waits for the main thread
 DETECTOR_POLL_INTERVAL = 2.0  # seconds between auto-record probes
+# A meeting mic hang restarts the app only if it has been up at least this long, so a mic that
+# hangs again straight after a restart can't put the app in a restart loop.
+MEETING_RESTART_MIN_UPTIME = 120.0
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +141,7 @@ class RylanFlowApp(rumps.App):
             self._pipeline.press, self._pipeline.release, key=self._config.hotkey
         )
         self._restarting = False
+        self._started_at = time.monotonic()
 
         # Kept directly (not just handed to MeetingSession) so learn_voice below can reuse the
         # same loaded models instead of building a second embedding extractor.
@@ -270,12 +274,23 @@ class RylanFlowApp(rumps.App):
         self._pipeline.tick()
         if self._config.overlay != "off" and self._pipeline.state != "idle":
             self._ensure_overlay_running()  # cheap no-op once it's already running
-        reason = self._pipeline.restart_reason()
+        reason = self._pipeline.restart_reason() or self._meeting_restart_reason()
         if reason and not self._restarting:
             self._restarting = True
             log.error("restarting because %s", reason)
             dump_threads()
             relaunch_and_exit()
+
+    def _meeting_restart_reason(self) -> str | None:
+        """A hung meeting mic wedges CoreAudio for the whole process, so dictation stops working
+        too (pressing the hotkey does nothing). Restart right away rather than waiting for the
+        next key press to discover it -- unless a dictation is in flight, or we only just
+        restarted (see MEETING_RESTART_MIN_UPTIME)."""
+        if not self._meeting_session.audio_stuck or self._pipeline.state != "idle":
+            return None
+        if time.monotonic() - self._started_at < MEETING_RESTART_MIN_UPTIME:
+            return None
+        return "the meeting microphone stopped responding"
 
     def _pick_model(self, sender: rumps.MenuItem) -> None:
         self._apply_settings_main_thread({"model": MODELS[sender.title]})
@@ -374,7 +389,7 @@ class RylanFlowApp(rumps.App):
         label, icon and indicator changes on its own without needing to hop to the main thread
         here. `source_app` lets the auto-record detector report the app it actually saw."""
         meeting_id = self._meeting_session.start(
-            source_app=source_app or frontmost_app(), on_error=self._notify_error
+            source_app=source_app or frontmost_app(), on_error=self._on_meeting_failed
         )
         self._meeting_detector.note_external_start()
         self._notify("Recording meeting — open RylanFlow to stop.")
@@ -461,8 +476,15 @@ class RylanFlowApp(rumps.App):
                 AppHelper.callAfter(self._auto_stop)
 
     def _auto_start(self, app_name: str) -> None:
-        self._meeting_session.start(source_app=app_name, on_error=self._notify_error)
+        self._meeting_session.start(source_app=app_name, on_error=self._on_meeting_failed)
         self._notify(f"Transcribing your {app_name} meeting.")
+
+    def _on_meeting_failed(self, message: str) -> None:
+        """Called from the meeting's start thread when capture couldn't start. Treat it like a
+        manual stop: otherwise the detector still believed the meeting was recording, and kept
+        stopping and re-starting it every few seconds -- two notifications each time."""
+        self._meeting_detector.note_external_stop()
+        self._notify_error(message)
 
     def _auto_stop(self) -> None:
         self._meeting_session.stop()

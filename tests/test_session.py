@@ -8,6 +8,7 @@ import pytest
 
 from rylanflow.meetings.calendar import Event
 from rylanflow.meetings.session import MeetingSession
+from rylanflow.recorder import AudioStuckError
 from rylanflow.store import Store
 from rylanflow.transcriber import Segment
 from rylanflow.transcription_service import TranscriptionService
@@ -311,6 +312,41 @@ def test_start_failure_marks_the_meeting_failed_and_reports_the_error(tmp_path):
         assert not session.active
         meeting = store.get_meeting(meeting_id)
         assert meeting["status"] == "failed"
+    finally:
+        service.stop()
+
+
+class HungTrack(BrokenTrack):
+    """Simulates a track whose open timed out inside CoreAudio."""
+
+    def start(self) -> None:
+        raise AudioStuckError("microphone did not start in time")
+
+
+def test_a_hung_mic_open_marks_the_session_audio_stuck(tmp_path):
+    store = Store(tmp_path / "test.db")
+    service = TranscriptionService()
+    try:
+        session = MeetingSession(store, service, FakeTranscriber(), "Rylan", HungTrack, FakeTrack)
+        errors = []
+        session.start(on_error=errors.append)
+        assert wait_for(lambda: errors, timeout=3.0)
+        assert session.audio_stuck
+    finally:
+        service.stop()
+
+
+def test_an_ordinary_start_failure_is_not_audio_stuck(tmp_path):
+    store = Store(tmp_path / "test.db")
+    service = TranscriptionService()
+    try:
+        session = MeetingSession(
+            store, service, FakeTranscriber(), "Rylan", BrokenTrack, BrokenTrack
+        )
+        errors = []
+        session.start(on_error=errors.append)
+        assert wait_for(lambda: errors, timeout=3.0)
+        assert not session.audio_stuck
     finally:
         service.stop()
 

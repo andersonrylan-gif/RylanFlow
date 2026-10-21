@@ -147,12 +147,12 @@ def test_a_genuinely_new_meeting_title_splits_into_a_second_recording():
 
     # the new call's title shows up -- mic never drops
     assert detector.update(signals(10, mic, second_call)) is None  # debouncing the change
-    assert detector.update(signals(14, mic, second_call)) is None  # 4s since the change, not yet
-    assert detector.update(signals(15, mic, second_call)) == Stop()  # 5s since the change
+    assert detector.update(signals(24, mic, second_call)) is None  # 14s since the change, not yet
+    assert detector.update(signals(25, mic, second_call)) == Stop()  # 15s since the change
 
     # the new meeting starts after its own start debounce
-    assert detector.update(signals(17, mic, second_call)) is None
-    assert detector.update(signals(20, mic, second_call)) == Start("Google Meet")
+    assert detector.update(signals(27, mic, second_call)) is None
+    assert detector.update(signals(30, mic, second_call)) == Start("Google Meet")
 
 
 def test_a_brief_flicker_to_a_different_title_does_not_split_the_meeting():
@@ -203,3 +203,45 @@ def test_manual_stop_overrides_auto_start_until_the_signal_goes_false():
     assert detector.update(signals(60, set())) is None
     assert detector.update(signals(65, {"us.zoom.xos"})) is None
     assert detector.update(signals(70, {"us.zoom.xos"})) == Start("Zoom")
+
+
+def test_another_meet_looking_window_never_splits_the_meeting():
+    # Regression: a Calendar tab or the Meet home page ("Google Meet") showing up alongside the
+    # call, or windows coming back in a different order, used to count as "a different meeting
+    # title" and cut one call into many recordings -- each with its own notification.
+    detector = MeetingDetector()
+    call = ("Google Chrome", "Meet - abc-defg-hij")
+    mic = {"com.google.Chrome.helper"}
+    detector.update(signals(0, mic, [call]))
+    assert detector.update(signals(5, mic, [call])) == Start("Google Meet")
+
+    others = [
+        [("Google Chrome", "Google Meet"), call],
+        [("Google Chrome", "Daily sync - Google Calendar - Google Meet"), call],
+        [("Google Chrome", "Meet - abc-defg-hij (presenting)")],
+        [("Google Chrome", "Google Meet")],  # the call's tab is behind another one
+        [("Google Chrome", "Meet - xyz-pqrs-tuv"), call],  # a second call open alongside
+    ]
+    for t in range(6, 600, 2):
+        assert detector.update(signals(t, mic, others[t % len(others)])) is None
+
+
+def test_a_meeting_without_a_meet_code_never_splits_on_titles():
+    detector = MeetingDetector()
+    mic = {"com.google.Chrome.helper"}
+    detector.update(signals(0, mic, [("Google Chrome", "Zoom Meeting")]))
+    assert detector.update(signals(5, mic, [("Google Chrome", "Zoom Meeting")])) == Start("Zoom")
+    for t in range(6, 120, 2):
+        titles = [("Google Chrome", "Microsoft Teams meeting")]
+        assert detector.update(signals(t, mic, titles)) is None
+
+
+def test_an_externally_started_meeting_adopts_the_first_meet_code_it_sees():
+    detector = MeetingDetector()
+    detector.note_external_start()
+    mic = {"com.google.Chrome.helper"}
+    assert detector.update(signals(0, mic, [("Google Chrome", "Google Meet")])) is None
+    assert detector.update(signals(2, mic, [("Google Chrome", "Meet - abc-defg-hij")])) is None
+    second_call = [("Google Chrome", "Meet - xyz-pqrs-tuv")]
+    assert detector.update(signals(10, mic, second_call)) is None
+    assert detector.update(signals(25, mic, second_call)) == Stop()
