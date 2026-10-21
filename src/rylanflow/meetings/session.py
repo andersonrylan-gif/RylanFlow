@@ -28,6 +28,7 @@ from rylanflow.meetings.chunker import Chunker
 from rylanflow.meetings.diarize import Diarizer, concat_audio_for_turns
 from rylanflow.meetings.mic_track import MicTrack
 from rylanflow.meetings.system_audio import SystemAudioTrack
+from rylanflow.recorder import AudioStuckError
 from rylanflow.store import Store, data_dir
 from rylanflow.transcriber import MLXWhisperTranscriber
 from rylanflow.transcription_service import MEETING_PRIORITY, TranscriptionService
@@ -88,10 +89,17 @@ class MeetingSession:
 
         self._meeting_id: int | None = None
         self._active: _Active | None = None
+        self._audio_stuck = False
 
     @property
     def active(self) -> bool:
         return self._meeting_id is not None
+
+    @property
+    def audio_stuck(self) -> bool:
+        """True once opening the meeting's audio hung. CoreAudio is then wedged for this whole
+        process -- dictation included -- and only a restart recovers it."""
+        return self._audio_stuck
 
     @property
     def meeting_id(self) -> int | None:
@@ -153,8 +161,10 @@ class MeetingSession:
         try:
             active.mic.start()
             active.system.start()
-        except Exception:
+        except Exception as exc:
             log.exception("could not start meeting capture")
+            if isinstance(exc, AudioStuckError):
+                self._audio_stuck = True
             self._store.finish_meeting(meeting_id, "failed")
             if self._meeting_id == meeting_id:
                 self._meeting_id = None
