@@ -1,4 +1,7 @@
 import hashlib
+import os
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -114,3 +117,62 @@ def test_concat_audio_for_turns_uses_everything_under_the_cap(tmp_path):
 
     assert audio is not None
     assert audio.size == int(3.0 * 16_000)  # 2s + 1s turn, both fit under the cap
+
+
+# --- the helper process (these functions run in it, so they must stay module-level) ---
+
+
+def _add(a, b):
+    return a + b
+
+
+def _fail():
+    raise ValueError("model exploded")
+
+
+def _crash():
+    os._exit(1)
+
+
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def test_helper_process_returns_the_result():
+    assert diarize.run_in_helper_process(_add, (2, 3), timeout=60) == 5
+
+
+def test_helper_process_reports_an_error():
+    with pytest.raises(RuntimeError, match="model exploded"):
+        diarize.run_in_helper_process(_fail, (), timeout=60)
+
+
+def test_helper_process_reports_a_crash():
+    with pytest.raises(RuntimeError, match="crashed"):
+        diarize.run_in_helper_process(_crash, (), timeout=60)
+
+
+def test_helper_process_is_killed_on_timeout():
+    with pytest.raises(RuntimeError, match="timed out"):
+        diarize.run_in_helper_process(_sleep, (120,), timeout=5)
+
+
+def test_waiting_on_the_helper_process_does_not_stall_other_threads():
+    # Regression: sherpa-onnx holds the GIL for the whole run. Done in-process, that froze the
+    # hotkey and the menu bar for minutes after every long meeting.
+    gaps = []
+    stop = threading.Event()
+
+    def ticker():
+        last = time.monotonic()
+        while not stop.wait(0.02):
+            now = time.monotonic()
+            gaps.append(now - last)
+            last = now
+
+    thread = threading.Thread(target=ticker, daemon=True)
+    thread.start()
+    diarize.run_in_helper_process(_sleep, (1,), timeout=60)
+    stop.set()
+    thread.join()
+    assert max(gaps) < 0.5

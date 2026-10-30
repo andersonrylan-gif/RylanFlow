@@ -4,10 +4,16 @@ generic "Others" speaker into Speaker 1..N by running sherpa-onnx over the meeti
 Needs scripts/fix_sherpa_onnx_dylib.py to have been run once (see docs/decisions/
 0004-diarization.md for why) -- sherpa_onnx is imported lazily in _build() so that
 importing this module itself never requires that fix to already be in place.
+
+The diarization itself runs in a separate process: sherpa-onnx holds Python's GIL for the whole
+run (minutes, for a long meeting), which would otherwise freeze every thread in the app -- the
+hotkey, the menu bar, the overlay -- until it finished.
 """
 
 import hashlib
 import logging
+import multiprocessing
+import os
 import shutil
 import tarfile
 import urllib.request
@@ -46,6 +52,10 @@ DEFAULT_CLUSTERING_THRESHOLD = 0.7
 # whichever other speaker is temporally nearest (meetings.speakers.merge_short_speakers) -- a
 # few seconds of total talk time is almost always a clustering artifact, not a real participant.
 MIN_SPEAKER_DURATION_S = 15.0
+
+# Longest the helper process gets before it's killed and the meeting keeps "Others" as-is. Well
+# above real runs: a two-hour meeting took about 6 minutes.
+DIARIZE_TIMEOUT_S = 30 * 60.0
 
 
 def _sha256(path: Path) -> str:
@@ -148,14 +158,84 @@ def concat_audio_for_turns(
     return np.concatenate(chunks)
 
 
+def _helper_main(conn, fn, args) -> None:
+    """Runs in the helper process: sends fn's result (or its error) back over the pipe."""
+    try:
+        os.nice(10)  # heavy background work; never compete with the user's meeting or dictation
+        message = ("ok", fn(*args))
+    except Exception as exc:
+        message = ("error", repr(exc))
+    try:
+        conn.send(message)
+    except OSError:
+        pass  # the app quit or restarted while we were working; nobody wants the result
+    finally:
+        conn.close()
+
+
+def run_in_helper_process(fn, args: tuple, timeout: float):
+    """fn(*args) in a fresh process, waiting without holding the GIL. fn must be a module-level
+    function. Raises RuntimeError if it fails, crashes or runs past `timeout`."""
+    ctx = multiprocessing.get_context("spawn")
+    receiver, sender = ctx.Pipe(duplex=False)
+    process = ctx.Process(target=_helper_main, args=(sender, fn, args), daemon=True)
+    process.start()
+    sender.close()  # so recv() sees EOF if the helper dies, rather than waiting on our own copy
+    try:
+        if not receiver.poll(timeout):
+            raise RuntimeError(f"helper process timed out after {timeout:g}s")
+        try:
+            status, value = receiver.recv()
+        except EOFError:
+            raise RuntimeError("helper process crashed") from None
+    finally:
+        receiver.close()
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=5)
+    if status != "ok":
+        raise RuntimeError(f"helper process failed: {value}")
+    return value
+
+
+def _build_diarization(threshold: float):
+    import sherpa_onnx
+
+    segmentation_model = ensure_segmentation_model()
+    embedding_model = ensure_embedding_model()
+    config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+        segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+            pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(segmentation_model)
+            )
+        ),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(embedding_model)),
+        clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=threshold),
+        min_duration_on=0.3,
+        min_duration_off=0.5,
+    )
+    return sherpa_onnx.OfflineSpeakerDiarization(config)
+
+
+def _diarize_wav(wav_path: str, threshold: float) -> list[tuple[float, float, int]]:
+    """The helper process's whole job -- see the module docstring for why it's separate."""
+    samples = _read_wav_samples(Path(wav_path))
+    result = _build_diarization(threshold).process(samples)
+    return [(seg.start, seg.end, seg.speaker) for seg in result.sort_by_start_time()]
+
+
+def _has_audio(wav_path: Path) -> bool:
+    with wave.open(str(wav_path), "rb") as f:
+        return f.getnframes() > 0
+
+
 class Diarizer:
     """Create one (cheap -- no model loading yet), call diarize(wav_path) after a meeting ends.
-    The sherpa-onnx pipeline and its models are built lazily on the first call, so constructing
-    a Diarizer never triggers a download."""
+    Models are only fetched once they're first needed, so constructing a Diarizer never triggers
+    a download."""
 
     def __init__(self, threshold: float = DEFAULT_CLUSTERING_THRESHOLD) -> None:
         self._threshold = threshold
-        self._diarization = None
         self._embedding_extractor = None
 
     def _build_embedding_extractor(self):
@@ -180,34 +260,14 @@ class Diarizer:
             return None
         return list(self._embedding_extractor.compute(stream))
 
-    def _build(self):
-        import sherpa_onnx
-
-        segmentation_model = ensure_segmentation_model()
-        embedding_model = ensure_embedding_model()
-        config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
-            segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
-                pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
-                    model=str(segmentation_model)
-                )
-            ),
-            embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(embedding_model)),
-            clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=self._threshold),
-            min_duration_on=0.3,
-            min_duration_off=0.5,
-        )
-        return sherpa_onnx.OfflineSpeakerDiarization(config)
-
     def diarize(self, wav_path: Path) -> list[tuple[float, float, int]]:
         """(start, end, speaker_index) turns, sorted by start time, with spurious short-lived
         "speakers" already merged into their nearest real neighbor (see
         MIN_SPEAKER_DURATION_S). Speaker indices are 0-based and only meaningful within this
         one call's result."""
-        samples = _read_wav_samples(wav_path)
-        if samples.size == 0:
+        if not _has_audio(wav_path):
             return []
-        if self._diarization is None:
-            self._diarization = self._build()
-        result = self._diarization.process(samples)
-        turns = [(seg.start, seg.end, seg.speaker) for seg in result.sort_by_start_time()]
+        turns = run_in_helper_process(
+            _diarize_wav, (str(wav_path), self._threshold), DIARIZE_TIMEOUT_S
+        )
         return speakers.merge_short_speakers(turns, MIN_SPEAKER_DURATION_S)

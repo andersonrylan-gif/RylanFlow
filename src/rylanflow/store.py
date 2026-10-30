@@ -235,6 +235,14 @@ class Store:
             )
             self._conn.commit()
 
+    def finish_interrupted_processing(self) -> None:
+        """For app startup: a meeting left in "processing" lost its speaker-splitting step to a
+        quit or restart. Its transcript is complete, so show it as done rather than forever
+        "Processing speakers…"."""
+        with self._lock:
+            self._conn.execute("UPDATE meetings SET status = 'done' WHERE status = 'processing'")
+            self._conn.commit()
+
     def set_meeting_title(self, meeting_id: int, title: str) -> None:
         with self._lock:
             self._conn.execute("UPDATE meetings SET title = ? WHERE id = ?", (title, meeting_id))

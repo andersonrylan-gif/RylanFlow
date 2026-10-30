@@ -336,3 +336,18 @@ def test_reopening_existing_database_does_not_fail(tmp_path, clock):
     s2 = Store(path, clock=clock)
     assert [r["text"] for r in s2.list_dictations()] == ["persisted"]
     s2.close()
+
+
+def test_finish_interrupted_processing_only_touches_processing_meetings(tmp_path):
+    store = Store(tmp_path / "test.db")
+    interrupted = store.create_meeting()
+    store.finish_meeting(interrupted, "processing")
+    failed = store.create_meeting()
+    store.finish_meeting(failed, "failed")
+    recording = store.create_meeting()
+
+    store.finish_interrupted_processing()
+
+    assert store.get_meeting(interrupted)["status"] == "done"
+    assert store.get_meeting(failed)["status"] == "failed"
+    assert store.get_meeting(recording)["status"] == "recording"

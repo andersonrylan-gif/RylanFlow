@@ -120,6 +120,7 @@ class RylanFlowApp(rumps.App):
         super().__init__("RylanFlow", title=ICONS["idle"], quit_button="Quit")
         self._config = config or load_config()
         self._store = store or Store()
+        self._store.finish_interrupted_processing()
         self._last_transcript = ""
         self._transcriber = MLXWhisperTranscriber(
             self._config.model, self._config.language, self._config.vocabulary
